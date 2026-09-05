@@ -2,63 +2,42 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/lib/authContext';
-import { BarChart3, LogOut, Search, User as UserIcon } from 'lucide-react';
+import { DEMO_MODE } from '@/lib/demoMode';
+import { ArrowUpRight, LogOut, Search } from 'lucide-react';
 
 export const Navbar = () => {
   const { user, logout } = useAuth();
 
   return (
-    <nav className="border-b border-slate-800/80 bg-slate-950/60 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 text-indigo-400 font-bold text-xl tracking-tight">
-          <div className="w-8 h-8 rounded-md bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
-            <BarChart3 className="w-5 h-5" />
-          </div>
-          <span>Apex <span className="text-white">Research</span></span>
+    <header className="sticky top-0 z-50 border-b border-[#d9d5cb] bg-[#f5f2eb]/90 backdrop-blur">
+      <div className="mx-auto flex h-[72px] max-w-[1380px] items-center justify-between px-5 sm:px-8 lg:px-10">
+        <Link href="/" className="group flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#bdb9af] text-sm font-semibold tracking-tight">AR</span>
+          <span className="font-serif text-xl tracking-[-0.02em]">Apex Research</span>
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
+          {DEMO_MODE && <span className="hidden rounded-full border border-[#c7c1b5] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#74766f] sm:inline">Review mode</span>}
           {user ? (
             <>
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-1.5 text-sm font-medium text-slate-300 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800/60 transition"
-              >
-                <Search className="w-4 h-4 text-indigo-400" />
-                <span>Analysis</span>
+              <Link href="/dashboard" className="quiet-button hidden items-center gap-2 sm:flex">
+                <Search className="h-3.5 w-3.5" /> Analysis
               </Link>
-              <div className="flex items-center gap-3 pl-3 border-l border-slate-800">
-                <span className="text-xs text-slate-400 flex items-center gap-1">
-                  <UserIcon className="w-3.5 h-3.5 text-slate-500" />
-                  {user.name || user.email}
-                </span>
-                <button
-                  onClick={logout}
-                  className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2.5 py-1.5 rounded transition"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Logout</span>
+              <div className="flex items-center gap-2 border-l border-[#d9d5cb] pl-3">
+                <span className="hidden text-xs text-[#74766f] md:inline">{user.name || user.email}</span>
+                <button onClick={() => void logout()} className="quiet-button flex items-center gap-1.5 !border-transparent !bg-transparent">
+                  <LogOut className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Log out</span>
                 </button>
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-3">
-              <Link
-                href="/login"
-                className="text-sm font-medium text-slate-300 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800/60 transition"
-              >
-                Sign In
-              </Link>
-              <Link
-                href="/register"
-                className="text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg shadow-sm shadow-indigo-600/30 transition"
-              >
-                Get Started
-              </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/login" className="quiet-button">Sign in</Link>
+              <Link href="/register" className="primary-button hidden sm:inline-flex">Get started <ArrowUpRight className="ml-1 inline h-3.5 w-3.5" /></Link>
             </div>
           )}
         </div>
       </div>
-    </nav>
+    </header>
   );
 };

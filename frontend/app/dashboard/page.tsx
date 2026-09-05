@@ -8,7 +8,9 @@ import { SearchForm } from '@/components/SearchForm';
 import { JobStatusBar } from '@/components/JobStatusBar';
 import { DataGrid } from '@/components/DataGrid';
 import { DeckDownload } from '@/components/DeckDownload';
-import { PieChart, CheckCircle, Clock, AlertCircle, X } from 'lucide-react';
+import { BarChart3, CheckCircle, Clock, AlertCircle, X } from 'lucide-react';
+import { DEMO_MODE } from '@/lib/demoMode';
+import { createDemoJob, getDemoJob, listDemoJobs } from '@/lib/demoApi';
 import type { JobCreateResponse, JobDetail, JobsPageResponse, JobSummary, SearchPayload } from '@/lib/types';
 
 const BASE_POLL_INTERVAL_MS = 2500;
@@ -33,6 +35,13 @@ export default function DashboardPage() {
   }, [user, authLoading, router]);
 
   const fetchRecentJobs = async (cursor?: string | null) => {
+    if (DEMO_MODE) {
+      const jobs = listDemoJobs();
+      setRecentJobs(cursor ? (prev) => [...prev, ...jobs] : jobs);
+      setNextJobsCursor(null);
+      if (jobs.length > 0 && !activeJobId && !cursor) setActiveJobId(jobs[0].id);
+      return;
+    }
     try {
       const params = cursor ? { cursor, limit: 12 } : { limit: 12 };
       const res = await apiClient.get<JobsPageResponse>('/jobs', { params });
@@ -61,6 +70,18 @@ export default function DashboardPage() {
 
     const pollJob = async () => {
       try {
+        if (DEMO_MODE) {
+          const demoJob = getDemoJob(activeJobId);
+          if (!demoJob) return;
+          setJobData({ ...demoJob });
+          if (demoJob.status === 'COMPLETED' || demoJob.status === 'FAILED') {
+            setSearching(false);
+            void fetchRecentJobs();
+            return;
+          }
+          timeoutHandle = setTimeout(() => void pollJob(), BASE_POLL_INTERVAL_MS);
+          return;
+        }
         const res = await apiClient.get<JobDetail>(`/jobs/${activeJobId}`);
         if (cancelled) return;
 
@@ -100,6 +121,11 @@ export default function DashboardPage() {
     setSearching(true);
     setSubmitError(null);
     try {
+      if (DEMO_MODE) {
+        const demoId = createDemoJob(payload);
+        setActiveJobId(demoId);
+        return;
+      }
       const res = await apiClient.post<JobCreateResponse>('/jobs', payload);
       setActiveJobId(res.data.jobId);
     } catch (error) {
@@ -115,143 +141,42 @@ export default function DashboardPage() {
     : [];
 
   if (authLoading || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full" />
-      </div>
-    );
+    return <div className="flex min-h-[60vh] items-center justify-center text-sm text-[#74766f]">Loading workspace…</div>;
   }
 
   return (
     <div className="space-y-8 pb-12">
-      <div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">
-          Research dashboard
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Search result snippets, keyword hits, and heuristic sentiment summaries.
-        </p>
+      <div className="flex flex-col justify-between gap-5 border-b border-[#d9d5cb] pb-7 sm:flex-row sm:items-end">
+        <div>
+          <p className="eyebrow">Research workspace</p>
+          <h1 className="mt-2 font-serif text-4xl tracking-[-0.03em] sm:text-5xl">Analysis desk</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#74766f]">Collect source evidence, inspect the signals, then package the useful parts into a report.</p>
+        </div>
+        <div className="text-left sm:text-right"><p className="text-xs uppercase tracking-[0.12em] text-[#99958b]">Signed in as</p><p className="mt-1 text-sm font-semibold">{user.name || user.email}</p></div>
       </div>
 
-      {submitError && (
-        <div className="p-4 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{submitError}</span>
-          </div>
-          <button
-            onClick={() => setSubmitError(null)}
-            className="text-rose-400 hover:text-rose-200 p-1 rounded transition"
-            aria-label="Close error notice"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {DEMO_MODE && <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed border-[#c9c4b9] bg-[#eeeae2]/60 px-4 py-3 text-xs text-[#74766f]"><span><strong className="text-[#36382f]">Review mode.</strong> Authentication and database calls are replaced with local demo data.</span><span className="hidden sm:inline">Safe to remove before production</span></div>}
+
+      {submitError && <div className="flex items-center justify-between gap-3 rounded-lg border border-[#d9b9b3] bg-[#fbf1ef] p-4 text-sm text-[#8a3f36]"><div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{submitError}</div><button onClick={() => setSubmitError(null)} aria-label="Close"><X className="h-4 w-4" /></button></div>}
 
       <SearchForm onSearch={handleStartSearch} loading={searching} />
 
-      {jobData && (
-        <JobStatusBar
-          status={jobData.status}
-          errorMessage={jobData.errorMessage ?? undefined}
-          topic={jobData.topic}
-        />
-      )}
+      {jobData && <JobStatusBar status={jobData.status} errorMessage={jobData.errorMessage ?? undefined} topic={jobData.topic} />}
 
-      {jobData && jobData.liveResultsOnly && jobData.status === 'COMPLETED' && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm flex items-center gap-2.5">
-          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <span>
-            Note: Fewer live sources were discovered ({jobData.results.length}) than requested depth ({jobData.depth}). Returning verified live results only without synthetic padding.
-          </span>
-        </div>
-      )}
+      {jobData && jobData.liveResultsOnly && jobData.status === 'COMPLETED' && <div className="rounded-lg border border-[#ddd3b7] bg-[#faf7ea] px-4 py-3 text-sm leading-6 text-[#70633b]">Fewer live sources were discovered ({jobData.results.length}) than requested depth ({jobData.depth}). Verified results are shown without synthetic padding.</div>}
+
+      {jobData && jobData.status === 'COMPLETED' && <DeckDownload jobId={jobData.id} topic={jobData.topic} />}
 
       {jobData && jobData.status === 'COMPLETED' && (
-        <DeckDownload jobId={jobData.id} topic={jobData.topic} />
-      )}
-
-      {jobData && jobData.status === 'COMPLETED' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-lg">
-            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-indigo-400" />
-              <span>Key findings</span>
-            </h3>
-            <div className="space-y-3">
-              {jobData.bullets.length > 0 ? (
-                jobData.bullets.map((bullet, index) => (
-                  <div key={`${index}-${bullet}`} className="flex items-start gap-2.5 text-sm text-slate-300">
-                    <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                    <span>{bullet}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-400">No takeaways available yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg flex flex-col justify-between">
-            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-              <PieChart className="w-4 h-4 text-indigo-400" />
-              <span>Sentiment analysis</span>
-            </h3>
-            <div className="space-y-3">
-              {sentimentEntries.map(([label, value]) => (
-                <div key={label} className="bg-slate-950/60 p-3 rounded-md border border-slate-800/80 flex justify-between items-center">
-                  <span className="text-xs font-medium text-slate-300">{label}</span>
-                  <span className="text-sm font-bold text-indigo-400 font-mono">{value} hits</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-500">
-              Based on lexical heuristics applied to retrieved titles and snippets.
-            </div>
-          </div>
+        <div className="grid gap-5 lg:grid-cols-[1.5fr_.7fr]">
+          <section className="panel p-6"><div className="flex items-center gap-3 border-b border-[#e1ddd4] pb-4"><CheckCircle className="h-4 w-4" /><div><p className="eyebrow">Interpretation</p><h3 className="mt-1 font-serif text-2xl">Key findings</h3></div></div><div className="mt-5 space-y-4">{jobData.bullets.length ? jobData.bullets.map((bullet, index) => <div key={`${index}-${bullet}`} className="grid grid-cols-[24px_1fr] gap-3 border-b border-[#ece8e0] pb-4 last:border-0 last:pb-0"><span className="font-mono text-xs text-[#aaa69d]">0{index + 1}</span><p className="text-sm leading-6 text-[#4e5049]">{bullet}</p></div>) : <p className="text-sm text-[#74766f]">No takeaways available yet.</p>}</div></section>
+          <section className="panel p-6"><div className="flex items-center gap-3 border-b border-[#e1ddd4] pb-4"><BarChart3 className="h-4 w-4" /><div><p className="eyebrow">Signals</p><h3 className="mt-1 font-serif text-2xl">Sentiment</h3></div></div><div className="mt-5 space-y-3">{sentimentEntries.map(([label, value]) => <div key={label} className="flex items-center justify-between border-b border-[#ece8e0] py-2.5"><span className="text-sm text-[#5f615a]">{label}</span><span className="font-mono text-sm font-semibold">{value}</span></div>)}</div><p className="mt-5 text-[11px] leading-5 text-[#99958b]">Lexical heuristic applied to retrieved titles and snippets.</p></section>
         </div>
       )}
 
-      {jobData && jobData.results && <DataGrid results={jobData.results} />}
+      {jobData?.results && <DataGrid results={jobData.results} />}
 
-      {recentJobs.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg">
-          <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-slate-400" />
-            <span>Previous analyses</span>
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {recentJobs.map((job) => (
-              <button
-                key={job.id}
-                onClick={() => setActiveJobId(job.id)}
-                className={`p-3.5 rounded-xl border text-left transition ${
-                  activeJobId === job.id
-                    ? 'bg-indigo-950/40 border-indigo-500/50 text-white'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                }`}
-              >
-                <div className="font-medium text-sm text-slate-200 truncate">{job.topic}</div>
-                <div className="flex justify-between items-center mt-2 text-xs text-slate-500">
-                  <span className="uppercase text-[10px] font-semibold tracking-wider text-indigo-400">
-                    {job.status}
-                  </span>
-                  <span>{new Date(job.createdAt).toLocaleDateString()}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-          {nextJobsCursor && (
-            <button
-              onClick={() => void fetchRecentJobs(nextJobsCursor)}
-              className="mt-4 text-sm text-indigo-400 hover:text-indigo-300 transition"
-            >
-              Load older jobs
-            </button>
-          )}
-        </div>
-      )}
+      {recentJobs.length > 0 && <section className="panel p-6"><div className="flex items-end justify-between border-b border-[#e1ddd4] pb-4"><div><p className="eyebrow">History</p><h3 className="mt-1 font-serif text-2xl">Previous analyses</h3></div>{nextJobsCursor && <button onClick={() => void fetchRecentJobs(nextJobsCursor)} className="text-xs font-semibold underline underline-offset-4">Load older</button>}</div><div className="mt-4 grid gap-2 md:grid-cols-2 lg:grid-cols-3">{recentJobs.map((job) => <button key={job.id} onClick={() => setActiveJobId(job.id)} className={`rounded-lg border p-4 text-left transition ${activeJobId === job.id ? 'border-[#85867c] bg-[#f0ede6]' : 'border-[#e1ddd4] hover:bg-[#faf8f3]'}`}><div className="truncate text-sm font-semibold">{job.topic}</div><div className="mt-2 flex justify-between text-[11px] uppercase tracking-[0.08em] text-[#8b887f]"><span>{job.status}</span><span>{new Date(job.createdAt).toLocaleDateString()}</span></div></button>)}</div></section>}
     </div>
   );
 }

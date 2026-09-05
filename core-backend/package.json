@@ -2,10 +2,10 @@
   "name": "core-backend",
   "version": "1.0.0",
   "description": "Central API backend for web analysis",
-  "main": "dist/core-backend/src/server.js",
+  "main": "../dist/core-backend/src/server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/core-backend/src/server.js",
+    "start": "node ../dist/core-backend/src/server.js",
     "dev": "tsx watch src/server.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

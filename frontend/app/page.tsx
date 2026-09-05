@@ -2,94 +2,66 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/lib/authContext';
-import { ArrowRight, Database, FileSpreadsheet, Globe, Zap } from 'lucide-react';
+import { ArrowRight, BookOpen, FileText, Search, ShieldCheck } from 'lucide-react';
 
 export default function LandingPage() {
   const { user } = useAuth();
 
   return (
-    <div className="flex flex-col items-center justify-center pt-8 pb-16">
-
-      <h1 className="text-4xl sm:text-6xl font-extrabold text-center tracking-tight max-w-4xl leading-tight">
-        Search result snippets,{' '}
-        <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400">
-          summarized clearly
-        </span>
-      </h1>
-
-      <p className="mt-6 text-base sm:text-lg text-slate-400 text-center max-w-2xl leading-relaxed">
-        Retrieve result cards, inspect keyword hits and heuristic sentiment, then export a concise PowerPoint report.
-      </p>
-
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-        {user ? (
-          <Link
-            href="/dashboard"
-            className="px-6 py-3.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-2 transition text-sm"
-          >
-            <span>Open Dashboard</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        ) : (
-          <>
-            <Link
-              href="/register"
-              className="px-6 py-3.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-2 transition text-sm"
-            >
-              <span>Create Account</span>
-              <ArrowRight className="w-4 h-4" />
+    <div className="pb-16">
+      <section className="grid min-h-[58vh] items-center gap-12 py-10 lg:grid-cols-[1.15fr_.85fr] lg:py-20">
+        <div>
+          <p className="eyebrow">Research workspace · 2026</p>
+          <h1 className="mt-5 max-w-4xl font-serif text-5xl leading-[0.98] tracking-[-0.045em] text-[#20221d] sm:text-7xl">
+            Evidence first.<br />Decisions clearer.
+          </h1>
+          <p className="mt-7 max-w-2xl text-base leading-7 text-[#74766f] sm:text-lg">
+            A focused workspace for collecting source snippets, reviewing signals and turning research into a concise, presentable brief.
+          </p>
+          <div className="mt-9 flex flex-wrap gap-3">
+            <Link href={user ? '/dashboard' : '/register'} className="primary-button inline-flex items-center gap-2 px-5 py-3">
+              {user ? 'Open workspace' : 'Create account'} <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link
-              href="/login"
-              className="px-6 py-3.5 rounded-md bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 font-semibold transition text-sm"
-            >
-              Sign In
-            </Link>
-          </>
-        )}
-      </div>
-
-      <div className="mt-16 grid grid-cols-1 md:grid-cols-4 gap-4 w-full max-w-6xl">
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg hover:border-slate-700 transition">
-          <div className="w-10 h-10 rounded-md bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4">
-            <Globe className="w-5 h-5" />
+            {!user && <Link href="/login" className="quiet-button px-5 py-3">Sign in</Link>}
           </div>
-          <h3 className="text-base font-bold text-white mb-1.5">Frontend Dashboard</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Submit jobs, monitor status, browse result cards, and download generated decks.
-          </p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg hover:border-slate-700 transition">
-          <div className="w-10 h-10 rounded-md bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4">
-            <Zap className="w-5 h-5" />
+        <div className="panel overflow-hidden">
+          <div className="border-b border-[#d9d5cb] px-6 py-5">
+            <div className="flex items-center justify-between"><span className="eyebrow">Current brief</span><span className="text-xs text-[#74766f]">Preview</span></div>
+            <h2 className="mt-3 font-serif text-2xl">Market signals, without the noise.</h2>
           </div>
-          <h3 className="text-base font-bold text-white mb-1.5">Backend API</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Handles authentication, job enqueueing, rate limits, and result persistence.
-          </p>
+          <div className="space-y-4 p-6">
+            {[
+              ['01', 'Collect', 'Search result cards and source snippets.'],
+              ['02', 'Review', 'Inspect mentions, sentiment and recurring themes.'],
+              ['03', 'Report', 'Package the findings into a clean presentation.'],
+            ].map(([n, title, copy]) => (
+              <div key={n} className="grid grid-cols-[32px_1fr] gap-4 border-b border-[#e4e0d8] pb-4 last:border-0 last:pb-0">
+                <span className="text-xs font-semibold text-[#99958b]">{n}</span>
+                <div><p className="font-semibold">{title}</p><p className="mt-1 text-sm leading-6 text-[#74766f]">{copy}</p></div>
+              </div>
+            ))}
+          </div>
         </div>
+      </section>
 
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg hover:border-slate-700 transition">
-          <div className="w-10 h-10 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4">
-            <Database className="w-5 h-5" />
-          </div>
-          <h3 className="text-base font-bold text-white mb-1.5">Snippet Worker</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Retrieves search-result cards and applies simple lexical sentiment heuristics.
-          </p>
+      <section className="border-t border-[#d9d5cb] pt-10">
+        <div className="grid gap-4 md:grid-cols-3">
+          {[
+            [Search, 'Source review', 'A compact view of titles, snippets, links and keyword hits.'],
+            [BookOpen, 'Research notes', 'Keep the important findings visible while you review a brief.'],
+            [FileText, 'Presentation ready', 'Turn completed research into a shareable report.'],
+          ].map(([Icon, title, copy]) => (
+            <div key={title as string} className="border-l border-[#c9c4b9] pl-5">
+              <Icon className="h-4 w-4 text-[#5a5b52]" />
+              <h3 className="mt-4 font-serif text-xl">{title as string}</h3>
+              <p className="mt-2 text-sm leading-6 text-[#74766f]">{copy as string}</p>
+            </div>
+          ))}
         </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg hover:border-slate-700 transition">
-          <div className="w-10 h-10 rounded-md bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-          <h3 className="text-base font-bold text-white mb-1.5">Presentation Service</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Builds PowerPoint decks with charts, bullets, and source tables.
-          </p>
-        </div>
-      </div>
+        <div className="mt-10 flex items-center gap-2 text-xs text-[#8a877f]"><ShieldCheck className="h-3.5 w-3.5" /> Built as a practical research tool, not an AI chat interface.</div>
+      </section>
     </div>
   );
 }
