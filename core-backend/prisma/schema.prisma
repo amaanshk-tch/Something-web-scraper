@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  jobs         Job[]
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Job {
+  id            String    @id @default(uuid())
+  userId        String
+  requestId     String?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic         String
+  keywords      String[]
+  depth         Int       @default(5)
+  status        JobStatus @default(PENDING)
+  sentimentData Json?
+  bullets       String[]
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  results       Result[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Result {
+  id        String   @id @default(uuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sourceUrl String
+  title     String
+  snippet   String
+  sentiment String   @default("neutral")
+  mentions  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@index([jobId, mentions])
+}

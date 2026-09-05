@@ -1,0 +1,86 @@
+# ===================================================
+# Dependencies
+# ===================================================
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# ===================================================
+# Production & Compiler Builds
+# ===================================================
+dist/
+*/dist/
+.next/
+*/.next/
+out/
+*/out/
+build/
+*/build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ===================================================
+# Environment & Sensitive Variables
+# ===================================================
+.env
+.env*.local
+.env.backup
+*.env
+!*.env.example
+
+# ===================================================
+# Logs & Diagnostic Files
+# ===================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ===================================================
+# Python Artifacts & Virtual Environments
+# ===================================================
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+*/venv/
+*/.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ===================================================
+# Presentation Engine Generated Outputs & Charts
+# ===================================================
+temp_outputs/
+*/temp_outputs/
+output_presentation.pptx
+temp_chart.png
+*.pptx
+*.png
+
+# ===================================================
+# Editor & IDE Cache
+# ===================================================
+.idea/
+*.swp
+*.swo
+*~
+
+# ===================================================
+# OS Metadata
+# ===================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
