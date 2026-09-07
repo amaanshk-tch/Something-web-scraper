@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup, Tag
+import hmac
 import urllib.parse
 import urllib.request
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -41,7 +42,7 @@ if not INTERNAL_SERVICE_KEY:
 
 
 def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key")):
-    if not x_internal_key or x_internal_key != INTERNAL_SERVICE_KEY:
+    if not x_internal_key or not hmac.compare_digest(x_internal_key, INTERNAL_SERVICE_KEY):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing internal service authorization key"
@@ -228,7 +229,7 @@ def health(request: Request):
 
 @app.post("/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_internal_key)])
 @limiter.limit("30/minute")  # Scraping is expensive — tight cap even for internal callers
-async def scrape_and_analyze(payload: ScrapeRequest, request: Request):
+def scrape_and_analyze(payload: ScrapeRequest, request: Request):
     # Sanitize inputs
     topic = sanitize_text(payload.topic, max_length=200)
     if not topic:

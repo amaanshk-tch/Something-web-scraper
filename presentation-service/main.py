@@ -3,6 +3,7 @@ import re
 import time
 import json
 import uuid
+import hmac
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -72,7 +73,7 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 
 def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key")):
-    if not x_internal_key or x_internal_key != INTERNAL_SERVICE_KEY:
+    if not x_internal_key or not hmac.compare_digest(x_internal_key, INTERNAL_SERVICE_KEY):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing internal service authorization key"

@@ -59,9 +59,13 @@ const registerSchema = z.object({
   password: z.string().min(12, 'Password must be at least 12 characters').max(256),
   name: z
     .string()
-    .transform((val) => sanitizeAuthString(val, 80))
-    .pipe(z.string().min(1).max(80))
-    .optional(),
+    .nullable()
+    .optional()
+    .transform((val) => {
+      if (!val) return undefined;
+      const sanitized = sanitizeAuthString(val, 80);
+      return sanitized.length > 0 ? sanitized : undefined;
+    }),
 });
 
 const loginSchema = z.object({
