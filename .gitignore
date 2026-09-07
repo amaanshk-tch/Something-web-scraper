@@ -1,39 +1,62 @@
 # ===================================================
-# Dependencies
+# Dependencies & Package Managers
 # ===================================================
 node_modules/
-*/node_modules/
+**/node_modules/
 .pnp
 .pnp.js
-.vscode/
-.vscode
-
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
 
 # ===================================================
-# Production & Compiler Builds
+# Production, Framework & Compiler Builds
 # ===================================================
 dist/
-*/dist/
-.next/
-*/.next/
-out/
-*/out/
+**/dist/
 build/
-*/build/
+**/build/
+out/
+**/out/
+.next/
+**/.next/
+.turbo/
+**/.turbo/
+.vercel/
+**/.vercel/
 *.tsbuildinfo
 next-env.d.ts
+*.egg-info/
+**/egg-info/
 
 # ===================================================
-# Environment & Sensitive Variables
+# Environment, Secrets & Credentials
 # ===================================================
 .env
+.env.*
 .env*.local
 .env.backup
 *.env
 !*.env.example
+*.pem
+*.key
+*.cert
+*.p12
 
 # ===================================================
-# Logs & Diagnostic Files
+# Databases & Local Storage
+# ===================================================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+core-backend/prisma/*.db
+core-backend/prisma/*.db-journal
+
+# ===================================================
+# Logs & Process Dumps
 # ===================================================
 *.log
 npm-debug.log*
@@ -46,7 +69,7 @@ lerna-debug.log*
 # Python Artifacts & Virtual Environments
 # ===================================================
 __pycache__/
-*/__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -55,35 +78,68 @@ env/
 venv/
 ENV/
 .venv/
-*/venv/
-*/.venv/
+**/env/
+**/venv/
+**/.venv/
 pip-log.txt
 pip-delete-this-directory.txt
 .pytest_cache/
+**/pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+.pyrefly/
+**/.pyrefly/
+__pyrefly_virtual__/
+**/__pyrefly_virtual__/
 .coverage
+.coverage.*
 htmlcov/
+**/htmlcov/
 
 # ===================================================
-# Presentation Engine Generated Outputs & Charts
+# Test Coverage & Tooling Reports
+# ===================================================
+coverage/
+**/coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# ===================================================
+# Presentation Engine & Generated Artifacts
 # ===================================================
 temp_outputs/
-*/temp_outputs/
+**/temp_outputs/
 output_presentation.pptx
-temp_chart.png
+temp_chart*.png
 *.pptx
-*.png
 
 # ===================================================
-# Editor & IDE Cache
+# Editor, IDE & Workspace Cache
 # ===================================================
+.vscode/
+**/.vscode/
 .idea/
+**/.idea/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # ===================================================
 # OS Metadata
 # ===================================================
 .DS_Store
+**/.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+**/Thumbs.db
+ehthumbs.db
 Desktop.ini
+**/Desktop.ini

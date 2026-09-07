@@ -56,9 +56,31 @@ const presentationLimiter = rateLimit({
   handler: (req, res) => rateLimitError(req as AuthenticatedRequest, res, 'Too many report requests. Please try again later.'),
 });
 
+function sanitizeInputString(val: unknown, maxLen = 200): string {
+  if (typeof val !== 'string') return '';
+  return val
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, '') // strip control chars
+    .replace(/<[^>]*>/g, '') // strip HTML tags
+    .replace(/\s+/g, ' ') // collapse whitespace
+    .trim()
+    .slice(0, maxLen);
+}
+
 const createJobSchema = z.object({
-  topic: z.string().trim().min(2, 'Topic must be at least 2 characters').max(200, 'Topic must be 200 characters or fewer'),
-  keywords: z.array(z.string().trim().min(1).max(80, 'Each keyword must be 80 characters or fewer')).max(20, 'No more than 20 keywords are allowed').default([]),
+  topic: z
+    .string()
+    .transform((val) => sanitizeInputString(val, 200))
+    .pipe(z.string().min(2, 'Topic must be at least 2 characters').max(200, 'Topic must be 200 characters or fewer')),
+  keywords: z
+    .array(
+      z
+        .string()
+        .transform((val) => sanitizeInputString(val, 50))
+        .pipe(z.string().min(1).max(50))
+    )
+    .max(20, 'No more than 20 keywords are allowed')
+    .default([])
+    .transform((arr) => Array.from(new Set(arr.map((k) => k.toLowerCase()))).slice(0, 20)),
   depth: z.number().int().min(1).max(15).default(5),
 });
 

@@ -59,6 +59,59 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Input Sanitization Helpers
+# ---------------------------------------------------------------------------
+
+def sanitize_text(value: str, max_length: int = 200) -> str:
+    """
+    Sanitizes string inputs:
+    - Strips non-printable and control characters (ASCII 0-31, 127-159)
+    - Strips HTML / XML tags to prevent script injection
+    - Normalizes multiple spaces/newlines/tabs into a single space
+    - Truncates to max_length
+    """
+    if not value or not isinstance(value, str):
+        return ""
+    # Strip non-printable and control characters
+    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
+    # Strip HTML tags
+    cleaned = re.sub(r'<[^>]*>', '', cleaned)
+    # Collapse whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned[:max_length]
+
+
+def sanitize_keywords(keywords: List[str], max_count: int = 20, max_kw_len: int = 50) -> List[str]:
+    """
+    Sanitizes, lowercases, deduplicates, and limits keyword list items.
+    """
+    cleaned_keywords: List[str] = []
+    seen = set()
+    for kw in keywords:
+        if not isinstance(kw, str):
+            continue
+        cleaned = sanitize_text(kw, max_length=max_kw_len).lower()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            cleaned_keywords.append(cleaned)
+            if len(cleaned_keywords) >= max_count:
+                break
+    return cleaned_keywords
+
+
+def is_safe_url(url: str) -> bool:
+    """
+    Ensures URL uses safe HTTP or HTTPS scheme and has a valid domain.
+    Rejects javascript:, data:, file:, etc.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
 class ScrapeRequest(BaseModel):
     topic: str = Field(..., description="Target search topic or domain")
     keywords: List[str] = Field(default_factory=list, description="Specific keyword filters to count in result titles and snippets")
@@ -108,23 +161,31 @@ def extract_result_from_card(card: Tag) -> Optional[Dict[str, str]]:
     href = ""
     for candidate in (title_elem, url_elem):
         if candidate and candidate.get("href"):
-            href = decode_duckduckgo_href(candidate.get("href", ""))
-            if href:
+            candidate_href = candidate.get("href", "")
+            decoded = decode_duckduckgo_href(candidate_href)
+            if is_safe_url(decoded):
+                href = decoded
                 break
 
-    title_text = title_elem.get_text(" ", strip=True) if title_elem else ""
-    snippet_text = snippet_elem.get_text(" ", strip=True) if snippet_elem else ""
+    if not href:
+        return None
 
-    if not href or not (title_text or snippet_text):
+    raw_title = title_elem.get_text(" ", strip=True) if title_elem else ""
+    raw_snippet = snippet_elem.get_text(" ", strip=True) if snippet_elem else ""
+
+    if not raw_title and not raw_snippet:
         return None
 
     parsed_url = urllib.parse.urlparse(href)
     fallback_title = parsed_url.netloc or href
 
+    clean_title = sanitize_text(raw_title or fallback_title, max_length=300)
+    clean_snip = sanitize_text(raw_snippet or clean_title, max_length=1500)
+
     return {
         "url": href,
-        "title": title_text or fallback_title,
-        "snippet": snippet_text or title_text,
+        "title": clean_title,
+        "snippet": clean_snip,
     }
 
 
@@ -137,7 +198,8 @@ def search_web_sources(topic: str, depth: int = 5) -> List[Dict[str, str]]:
     results: List[Dict[str, str]] = []
 
     try:
-        query_param = urllib.parse.quote_plus(topic)
+        safe_topic = sanitize_text(topic, max_length=200)
+        query_param = urllib.parse.quote_plus(safe_topic)
         url = f"https://html.duckduckgo.com/html/?q={query_param}"
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -167,9 +229,16 @@ def health(request: Request):
 @app.post("/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_internal_key)])
 @limiter.limit("30/minute")  # Scraping is expensive — tight cap even for internal callers
 async def scrape_and_analyze(payload: ScrapeRequest, request: Request):
-    topic = payload.topic.strip()
-    keywords = [k.lower().strip() for k in payload.keywords if k.strip()]
-    depth = max(1, min(payload.depth, 15))
+    # Sanitize inputs
+    topic = sanitize_text(payload.topic, max_length=200)
+    if not topic:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Topic is required and cannot be empty after sanitization."
+        )
+
+    keywords = sanitize_keywords(payload.keywords, max_count=20, max_kw_len=50)
+    depth = max(1, min(int(payload.depth), 15))
 
     sources = search_web_sources(topic, depth=depth)
     live_results_only = len(sources) < depth

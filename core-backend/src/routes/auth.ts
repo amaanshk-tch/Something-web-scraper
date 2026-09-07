@@ -44,10 +44,24 @@ const meLimiter = rateLimit({
   message: { error: 'Too many profile requests. Please try again later.' },
 });
 
+function sanitizeAuthString(val: unknown, maxLen = 80): string {
+  if (typeof val !== 'string') return '';
+  return val
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, '') // strip control chars
+    .replace(/<[^>]*>/g, '') // strip HTML tags
+    .replace(/\s+/g, ' ') // collapse whitespace
+    .trim()
+    .slice(0, maxLen);
+}
+
 const registerSchema = z.object({
-  email: z.string().trim().email('Please enter a valid email address').max(254),
+  email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(254),
   password: z.string().min(12, 'Password must be at least 12 characters').max(256),
-  name: z.string().trim().min(1).max(80).optional(),
+  name: z
+    .string()
+    .transform((val) => sanitizeAuthString(val, 80))
+    .pipe(z.string().min(1).max(80))
+    .optional(),
 });
 
 const loginSchema = z.object({

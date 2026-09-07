@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import uuid
@@ -8,6 +9,17 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks, Request, status
 from fastapi.responses import FileResponse
+
+def sanitize_text(text: str, max_len: int = 500) -> str:
+    """
+    Strips control characters, HTML tags, and collapses whitespace.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    cleaned = re.sub(r'<[^>]*>', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned[:max_len]
 from pydantic import BaseModel, Field
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -156,14 +168,14 @@ def health_check(request: Request):
 @app.post("/generate-presentation", dependencies=[Depends(verify_internal_key)])
 @limiter.limit("10/minute")  # PPTX generation is CPU/memory heavy — tight cap
 def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: Request):
-    topic = payload.topic
-    bullet_points = payload.bullets
+    topic = sanitize_text(payload.topic, max_len=200) or "Market Research"
+    bullet_points = [sanitize_text(b, max_len=300) for b in payload.bullets if sanitize_text(b)]
     chart_metrics = payload.metrics
     sources = payload.sources or []
 
     run_id = str(uuid.uuid4())[:8]
-    clean_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    filename_base = f"Research_Report_{clean_topic.replace(' ', '_')}_{run_id}"
+    clean_topic = re.sub(r'[^a-zA-Z0-9_\-]', '', topic.replace(' ', '_'))[:50] or "Report"
+    filename_base = f"Research_Report_{clean_topic}_{run_id}"
     ppt_path = os.path.join(TEMP_DIR, f"{filename_base}.pptx")
     chart_path = os.path.join(TEMP_DIR, f"temp_chart_{run_id}.png")
 
@@ -242,10 +254,11 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
 
         for row_index in range(1, rows):
             source = sources[row_index - 1] if row_index - 1 < len(sources) else {}
-            title_val = (source.get("title") or source.get("sourceUrl") or f"Source {row_index}")[:40]
-            snippet_text = source.get("snippet") or "Retrieved result snippet unavailable."
-            snippet_val = snippet_text[:80] + ("..." if len(snippet_text) > 80 else "")
-            sentiment_val = (source.get("sentiment") or "NEUTRAL").upper()
+            raw_title = source.get("title") or source.get("sourceUrl") or f"Source {row_index}"
+            title_val = sanitize_text(str(raw_title), max_len=40)
+            snippet_text = sanitize_text(str(source.get("snippet") or "Retrieved result snippet unavailable."), max_len=80)
+            snippet_val = snippet_text + ("..." if len(str(source.get("snippet", ""))) > 80 else "")
+            sentiment_val = sanitize_text(str(source.get("sentiment") or "NEUTRAL"), max_len=15).upper()
 
             row_data = [title_val, snippet_val, sentiment_val]
             for col_index, value in enumerate(row_data):
