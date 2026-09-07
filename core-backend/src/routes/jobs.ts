@@ -27,6 +27,26 @@ const createJobLimiter = rateLimit({
   handler: (req, res) => rateLimitError(req as AuthenticatedRequest, res, 'Too many job submissions. Please try again later.'),
 });
 
+// 60 list fetches per 15 min per user (pagination button clicks etc.)
+const listJobsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyGenerator: userRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => rateLimitError(req as AuthenticatedRequest, res, 'Too many list requests. Please slow down.'),
+});
+
+// 120 polls per 15 min per user — allows ~1 req every 7.5 s for a full session
+const getJobLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  keyGenerator: userRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => rateLimitError(req as AuthenticatedRequest, res, 'Too many status polls. Please wait a moment.'),
+});
+
 const presentationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
@@ -96,7 +116,7 @@ router.post('/', authenticateToken, createJobLimiter, async (req: AuthenticatedR
   }
 });
 
-router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', authenticateToken, listJobsLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const parseResult = jobsQuerySchema.safeParse(req.query);
@@ -122,7 +142,7 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:id', authenticateToken, getJobLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const job = await prisma.job.findFirst({
       where: { id: req.params.id, userId: req.user!.id },
