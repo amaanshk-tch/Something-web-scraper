@@ -11,12 +11,24 @@ from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup, Tag
 import urllib.parse
 import urllib.request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
 
 if os.getenv("APP_ENV", "development") != "production":
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+# ---------------------------------------------------------------------------
+# Rate limiting — in-memory, keyed by remote IP.
+# Acts as a defence-in-depth layer even though /scrape is already protected
+# by the X-Internal-Key guard.
+# ---------------------------------------------------------------------------
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
 app = FastAPI(title="Web Analytics - Data Extraction Engine", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 def log_event(event: str, **fields: object) -> None:
@@ -26,12 +38,15 @@ def log_event(event: str, **fields: object) -> None:
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "")
 if not INTERNAL_SERVICE_KEY:
     raise RuntimeError("INTERNAL_SERVICE_KEY environment variable is required.")
+
+
 def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key")):
     if not x_internal_key or x_internal_key != INTERNAL_SERVICE_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing internal service authorization key"
         )
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -49,12 +64,14 @@ class ScrapeRequest(BaseModel):
     keywords: List[str] = Field(default_factory=list, description="Specific keyword filters to count in result titles and snippets")
     depth: int = Field(default=5, description="Number of results to extract and process")
 
+
 class ScrapedResultItem(BaseModel):
     sourceUrl: str
     title: str
     snippet: str
     sentiment: str
     mentions: int
+
 
 class ScrapeResponse(BaseModel):
     topic: str
@@ -63,6 +80,7 @@ class ScrapeResponse(BaseModel):
     sentimentMetrics: Dict[str, int]
     bullets: List[str]
     results: List[ScrapedResultItem]
+
 
 HEADERS = {
     "User-Agent": (
@@ -73,12 +91,14 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+
 def decode_duckduckgo_href(href: str) -> str:
     if "uddg=" in href:
         parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
         if "uddg" in parsed and parsed["uddg"]:
             return parsed["uddg"][0]
     return href
+
 
 def extract_result_from_card(card: Tag) -> Optional[Dict[str, str]]:
     title_elem = card.find("a", class_="result__a")
@@ -106,6 +126,7 @@ def extract_result_from_card(card: Tag) -> Optional[Dict[str, str]]:
         "title": title_text or fallback_title,
         "snippet": snippet_text or title_text,
     }
+
 
 def search_web_sources(topic: str, depth: int = 5) -> List[Dict[str, str]]:
     """
@@ -138,12 +159,14 @@ def search_web_sources(topic: str, depth: int = 5) -> List[Dict[str, str]]:
 
 
 @app.get("/health")
-def health():
+@limiter.limit("60/minute")
+def health(request: Request):
     return {"status": "ok", "service": "data-engine", "version": "1.0.0"}
 
 
 @app.post("/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_internal_key)])
-async def scrape_and_analyze(payload: ScrapeRequest):
+@limiter.limit("30/minute")  # Scraping is expensive — tight cap even for internal callers
+async def scrape_and_analyze(payload: ScrapeRequest, request: Request):
     topic = payload.topic.strip()
     keywords = [k.lower().strip() for k in payload.keywords if k.strip()]
     depth = max(1, min(payload.depth, 15))

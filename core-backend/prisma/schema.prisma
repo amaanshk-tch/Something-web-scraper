@@ -42,6 +42,8 @@ model Job {
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  // Speeds up per-user job lookups by primary key (polling + presentation endpoints)
+  @@index([id, userId])
 }
 
 model Result {

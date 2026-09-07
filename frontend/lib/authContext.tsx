@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try { await apiClient.post('/auth/logout'); } catch { /* no-op */ }
     }
     setUser(null);
-    router.push('/login');
+    router.push('/login?logged_out=1');
   };
 
   return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;

@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import matplotlib
 
 matplotlib.use("Agg")
@@ -19,6 +22,7 @@ import matplotlib.pyplot as plt
 
 if os.getenv("APP_ENV", "development") != "production":
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 
 def log_event(event: str, **fields: object) -> None:
     print(json.dumps({"service": "presentation-service", "event": event, **fields}), flush=True)
@@ -29,6 +33,16 @@ if not INTERNAL_SERVICE_KEY:
     raise RuntimeError("INTERNAL_SERVICE_KEY environment variable is required.")
 
 app = FastAPI(title="Web Analytics - Presentation Engine", version="1.0.0")
+
+# ---------------------------------------------------------------------------
+# Rate limiting — in-memory, keyed by remote IP.
+# Defence-in-depth layer alongside the X-Internal-Key guard.
+# PPTX generation is CPU/memory heavy so the endpoint limit is intentionally tight.
+# ---------------------------------------------------------------------------
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -44,6 +58,7 @@ async def log_requests(request: Request, call_next):
 TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_outputs")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+
 def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key")):
     if not x_internal_key or x_internal_key != INTERNAL_SERVICE_KEY:
         raise HTTPException(
@@ -51,12 +66,14 @@ def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key
             detail="Invalid or missing internal service authorization key"
         )
 
+
 def cleanup_file(path: str):
     try:
         if os.path.exists(path):
             os.remove(path)
     except Exception as error:
         print(f"[Cleanup Warning] Failed to delete {path}: {error}")
+
 
 def sweep_temp_dir():
     now = time.time()
@@ -72,15 +89,18 @@ def sweep_temp_dir():
     except Exception as error:
         print(f"[Sweep Warning] Error cleaning temp directory: {error}")
 
+
 @app.on_event("startup")
 def on_startup():
     sweep_temp_dir()
+
 
 class DeckRequest(BaseModel):
     topic: str = Field(default="Market Research")
     bullets: List[str] = Field(default_factory=list)
     metrics: Dict[str, int] = Field(default_factory=lambda: {"Positive": 15, "Negative": 7, "Neutral": 11})
     sources: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+
 
 def generate_analytics_chart(data_summary: Dict[str, int], output_img_path: str):
     if not data_summary:
@@ -126,12 +146,16 @@ def generate_analytics_chart(data_summary: Dict[str, int], output_img_path: str)
     plt.savefig(output_img_path, dpi=220, facecolor=fig.get_facecolor(), edgecolor='none')
     plt.close()
 
+
 @app.get("/health")
-def health_check():
+@limiter.limit("60/minute")
+def health_check(request: Request):
     return {"status": "ok", "service": "presentation-service", "version": "1.0.0"}
 
+
 @app.post("/generate-presentation", dependencies=[Depends(verify_internal_key)])
-def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")  # PPTX generation is CPU/memory heavy — tight cap
+def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: Request):
     topic = payload.topic
     bullet_points = payload.bullets
     chart_metrics = payload.metrics
@@ -260,6 +284,7 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks):
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail="Presentation generation failed")
+
 
 if __name__ == "__main__":
     import uvicorn

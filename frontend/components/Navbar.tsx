@@ -2,11 +2,18 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/lib/authContext';
+import { useToast } from '@/lib/toastContext';
 import { DEMO_MODE } from '@/lib/demoMode';
 import { ArrowUpRight, LogOut, Search } from 'lucide-react';
 
 export const Navbar = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
+
+  const handleLogout = async () => {
+    toast.info('Signed out', 'You have been logged out successfully.');
+    await logout();
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#d9d5cb] bg-[#f5f2eb]/90 backdrop-blur">
@@ -25,7 +32,7 @@ export const Navbar = () => {
               </Link>
               <div className="flex items-center gap-2 border-l border-[#d9d5cb] pl-3">
                 <span className="hidden text-xs text-[#74766f] md:inline">{user.name || user.email}</span>
-                <button onClick={() => void logout()} className="quiet-button flex items-center gap-1.5 !border-transparent !bg-transparent">
+                <button onClick={() => void handleLogout()} className="quiet-button flex items-center gap-1.5 !border-transparent !bg-transparent">
                   <LogOut className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Log out</span>
                 </button>
               </div>

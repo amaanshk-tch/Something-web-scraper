@@ -26,6 +26,24 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again later.' },
 });
 
+// Prevent logout endpoint from being hammered (cookie clearing)
+const logoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many logout requests. Please try again later.' },
+});
+
+// /me is called on every page load — allow reasonable frequency but cap abuse
+const meLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many profile requests. Please try again later.' },
+});
+
 const registerSchema = z.object({
   email: z.string().trim().email('Please enter a valid email address').max(254),
   password: z.string().min(12, 'Password must be at least 12 characters').max(256),
@@ -119,7 +137,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
-router.post('/logout', (_req, res) => {
+router.post('/logout', logoutLimiter, (_req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
     secure: env.isProduction,
@@ -128,7 +146,7 @@ router.post('/logout', (_req, res) => {
   return res.json({ message: 'Logged out successfully' });
 });
 
-router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res) => {
+router.get('/me', authenticateToken, meLimiter, async (req: AuthenticatedRequest, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user?.id },

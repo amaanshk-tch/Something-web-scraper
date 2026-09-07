@@ -5,32 +5,66 @@ import { isAxiosError } from 'axios';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
+import { useToast } from '@/lib/toastContext';
 import { apiClient, getApiErrorMessage } from '@/lib/api';
-import { UserPlus, Mail, Lock, User, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import type { User as AppUser } from '@/lib/types';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
   const { login } = useAuth();
+  const { toast } = useToast();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
+
+    // Client-side validations
+    if (!email.trim()) {
+      setError('Email address is required.');
+      return;
+    }
+
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters long for enterprise security.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const res = await apiClient.post<{ user: AppUser }>('/auth/register', { name, email, password });
+      const res = await apiClient.post<{ user: AppUser; message?: string }>('/auth/register', {
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+
+      setSuccess('Account created successfully! Preparing your workspace…');
+      toast.success('Registration complete', 'Your research workspace is ready.');
       login(res.data.user);
-      router.push('/dashboard');
-    } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Registration failed'));
-      if (!isAxiosError(error)) {
-        console.error('Unexpected registration error:', error);
+
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 700);
+    } catch (err: unknown) {
+      const errorMsg = getApiErrorMessage(err, 'Registration could not be completed. Please verify your details.');
+      setError(errorMsg);
+      toast.error('Registration failed', errorMsg);
+
+      if (!isAxiosError(err)) {
+        console.error('Unexpected registration error:', err);
       }
     } finally {
       setSubmitting(false);
@@ -55,10 +89,28 @@ export default function RegisterPage() {
 
         {/* Card */}
         <div className="panel p-7">
+          {/* Success Alert */}
+          {success && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-[#b7d5bf] bg-[#f4f9f5] px-4 py-3 text-sm text-[#245431] animate-fade-in">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#2e6b3e]" />
+              <span>{success}</span>
+            </div>
+          )}
+
+          {/* Error Alert */}
           {error && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-[#d9b9b3] bg-[#fbf1ef] px-4 py-3 text-sm text-[#8a3f36]">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
+            <div className="mb-5 flex items-start justify-between gap-2.5 rounded-lg border border-[#d9b9b3] bg-[#fbf1ef] px-4 py-3 text-sm text-[#8a3f36] animate-fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#9c362d]" />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-[#9c362d]/70 hover:text-[#9c362d] p-0.5"
+                aria-label="Dismiss error"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
 
@@ -72,7 +124,10 @@ export default function RegisterPage() {
                   type="text"
                   value={name}
                   maxLength={80}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="Your name"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-[#d9d5cb] bg-white/60 text-sm text-[#1f211d] placeholder-[#b0aba3] focus:outline-none focus:border-[#85867c] focus:ring-2 focus:ring-[#85867c]/20 transition"
                 />
@@ -88,7 +143,10 @@ export default function RegisterPage() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="analyst@enterprise.com"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-[#d9d5cb] bg-white/60 text-sm text-[#1f211d] placeholder-[#b0aba3] focus:outline-none focus:border-[#85867c] focus:ring-2 focus:ring-[#85867c]/20 transition"
                 />
@@ -105,7 +163,10 @@ export default function RegisterPage() {
                   required
                   minLength={12}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="At least 12 characters"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-[#d9d5cb] bg-white/60 text-sm text-[#1f211d] placeholder-[#b0aba3] focus:outline-none focus:border-[#85867c] focus:ring-2 focus:ring-[#85867c]/20 transition"
                 />
