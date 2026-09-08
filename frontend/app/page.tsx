@@ -11,12 +11,12 @@ export default function LandingPage() {
     <div className="pb-16">
       <section className="grid min-h-[58vh] items-center gap-12 py-10 lg:grid-cols-[1.15fr_.85fr] lg:py-20">
         <div>
-          <p className="eyebrow">Research workspace · 2026</p>
+          <p className="eyebrow">Source review workspace · 2026</p>
           <h1 className="mt-5 max-w-4xl font-serif text-5xl leading-[0.98] tracking-[-0.045em] text-[#20221d] sm:text-7xl">
-            Evidence first.<br />Decisions clearer.
+            Search snippets.<br />Signal review.
           </h1>
           <p className="mt-7 max-w-2xl text-base leading-7 text-[#74766f] sm:text-lg">
-            A focused workspace for collecting source snippets, reviewing signals and turning research into a concise, presentable brief.
+            A focused workspace for collecting source snippets, reviewing keyword hits, and turning a lexical signal scan into a concise evidence brief.
           </p>
           <div className="mt-9 flex flex-wrap gap-3">
             <Link href={user ? '/dashboard' : '/register'} className="primary-button inline-flex items-center gap-2 px-5 py-3">

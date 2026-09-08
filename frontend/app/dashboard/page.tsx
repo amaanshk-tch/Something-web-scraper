@@ -184,6 +184,10 @@ export default function DashboardPage() {
       )
     : [];
 
+  const confidence = jobData
+    ? Math.min(99, Math.max(1, Math.round((jobData.results.length / Math.max(jobData.depth, 1)) * 100)))
+    : 0;
+
   if (authLoading || !user) {
     return <div className="flex min-h-[60vh] items-center justify-center text-sm text-[#74766f]">Loading workspace…</div>;
   }
@@ -192,9 +196,9 @@ export default function DashboardPage() {
     <div className="space-y-8 pb-12">
       <div className="flex flex-col justify-between gap-5 border-b border-[#d9d5cb] pb-7 sm:flex-row sm:items-end">
         <div>
-          <p className="eyebrow">Research workspace</p>
-          <h1 className="mt-2 font-serif text-4xl tracking-[-0.03em] sm:text-5xl">Analysis desk</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#74766f]">Collect source evidence, inspect the signals, then package the useful parts into a report.</p>
+          <p className="eyebrow">Source review workspace</p>
+          <h1 className="mt-2 font-serif text-4xl tracking-[-0.03em] sm:text-5xl">Signal review desk</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#74766f]">Collect source snippets, inspect keyword hits, and package the signal evidence into a report.</p>
         </div>
         <div className="text-left sm:text-right">
           <p className="text-xs uppercase tracking-[0.12em] text-[#99958b]">Signed in as</p>
@@ -280,56 +284,102 @@ export default function DashboardPage() {
       )}
 
       {jobData && jobData.status === 'COMPLETED' && (
-        <div className="grid gap-5 lg:grid-cols-[1.5fr_.7fr]">
-          <section className="panel p-6">
-            <div className="flex items-center gap-3 border-b border-[#e1ddd4] pb-4">
-              <CheckCircle className="h-4 w-4 text-[#2e6b3e]" />
-              <div>
-                <p className="eyebrow">Signals</p>
-                <h3 className="mt-1 font-serif text-2xl">Retrieved signals</h3>
+        <section className="panel p-6">
+          <div className="overflow-hidden rounded-xl border border-[#d9d5cb] bg-[#fbf9f4]">
+            <div className="border-b border-[#d9d5cb] px-5 py-4">
+              <p className="eyebrow">Research question</p>
+              <div className="mt-3 rounded-lg border border-[#e1ddd4] bg-white px-5 py-5 font-serif text-2xl leading-tight text-[#20221d]">
+                {jobData.topic}
               </div>
             </div>
-            <div className="mt-5 space-y-4">
-              {jobData.bullets.length ? (
-                jobData.bullets.map((bullet, index) => (
-                  <div
-                    key={`${index}-${bullet}`}
-                    className="grid grid-cols-[24px_1fr] gap-3 border-b border-[#ece8e0] pb-4 last:border-0 last:pb-0"
-                  >
-                    <span className="font-mono text-xs text-[#aaa69d]">0{index + 1}</span>
-                    <p className="text-sm leading-6 text-[#4e5049]">{bullet}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-[#74766f]">No takeaways available yet.</p>
-              )}
-            </div>
-          </section>
 
-          <section className="panel p-6">
-            <div className="flex items-center gap-3 border-b border-[#e1ddd4] pb-4">
-              <BarChart3 className="h-4 w-4" />
-              <div>
-                <p className="eyebrow">Signals</p>
-                <h3 className="mt-1 font-serif text-2xl">Lexical signal</h3>
+            <div className="grid gap-2 border-b border-[#d9d5cb] px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Sources</div>
+                <div className="mt-2 font-serif text-3xl text-[#20221d]">{jobData.results.length}</div>
+              </div>
+              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Claims</div>
+                <div className="mt-2 font-serif text-3xl text-[#20221d]">
+                  {jobData.results.reduce((total, item) => total + (item.claims?.length ?? 0), 0)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Themes</div>
+                <div className="mt-2 font-serif text-3xl text-[#20221d]">{lexicalSignalEntries.length}</div>
+              </div>
+              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Confidence</div>
+                <div className="mt-2 font-serif text-3xl text-[#20221d]">
+                  {confidence}%
+                </div>
               </div>
             </div>
-            <div className="mt-5 space-y-3">
-              {lexicalSignalEntries.map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between border-b border-[#ece8e0] py-2.5"
-                >
-                  <span className="text-sm text-[#5f615a]">{label}</span>
-                  <span className="font-mono text-sm font-semibold">{value}</span>
+
+            <div className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr]">
+              <section className="rounded-lg border border-[#e1ddd4] bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-[#2e6b3e]" />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b887f]">Executive summary</span>
                 </div>
-              ))}
+                <div className="mt-4 space-y-3">
+                  {jobData.bullets.length ? (
+                    jobData.bullets.slice(0, 4).map((bullet, index) => (
+                      <div key={`${index}-${bullet}`} className="flex gap-2 text-sm leading-6 text-[#4e5049]">
+                        <span className="font-mono text-[#aaa69d]">•</span>
+                        <span>{bullet}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-sm text-[#74766f]">No executive findings yet.</span>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-[#e1ddd4] bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-[#707154]" />
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b887f]">Signal map</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {lexicalSignalEntries.length ? (
+                    lexicalSignalEntries.map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between border-b border-[#ece8e0] py-2">
+                        <span className="text-sm text-[#5f615a]">{label}</span>
+                        <span className="font-mono text-sm font-semibold">{value}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-sm text-[#74766f]">Signal map unavailable.</span>
+                  )}
+                </div>
+              </section>
             </div>
-            <p className="mt-5 text-[11px] leading-5 text-[#99958b]">
-              Lexical heuristic applied to retrieved titles and snippets.
-            </p>
-          </section>
-        </div>
+
+            <div className="border-t border-[#d9d5cb] px-5 py-5">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-[#2e6b3e]" />
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b887f]">Evidence</span>
+              </div>
+              <div className="mt-4 rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
+                <div className="space-y-2">
+                  {jobData.results.slice(0, 3).map((result, index) => (
+                    <div key={result.id} className="grid gap-2 border-b border-[#ece8e0] pb-3 last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="font-semibold text-sm text-[#20221d]">Claim {index + 1}</span>
+                        <span className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">supports</span>
+                      </div>
+                      <div className="text-sm text-[#74766f]">
+                        <span className="inline-block rounded-full border border-[#d9d5cb] px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[#5f615a]">{result.title}</span>
+                      </div>
+                      <div className="text-sm leading-6 text-[#4e5049]">{result.snippet}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {jobData?.results && <DataGrid results={jobData.results} />}

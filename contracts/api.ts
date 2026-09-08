@@ -34,6 +34,11 @@ export interface ResultItem {
   snippet: string;
   sentiment: string;
   mentions: number;
+  publisher?: string;
+  published?: string;
+  relevance?: number;
+  evidence?: string;
+  claims?: string[];
   createdAt?: string;
 }
 
@@ -96,6 +101,14 @@ export interface ReportJobCreateResponse {
 export interface JobsPageResponse {
   jobs: JobSummary[];
   nextCursor: string | null;
+}
+
+export interface JobEvent {
+  jobId: string;
+  timestamp: string;
+  type: string;
+  message: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ApiErrorShape {

@@ -15,6 +15,7 @@ import { startJobReconciliation } from './lib/jobReconciliation';
 import { startJobWorker } from './lib/jobWorker';
 import { requestContext } from './middleware/requestContext';
 import { enforceOriginOnly, enforceOriginAndCsrf } from './middleware/csrf';
+import { errorHandler } from './middleware/errorHandler';
 import authRoutes from './routes/auth';
 import jobsRoutes from './routes/jobs';
 
@@ -76,6 +77,7 @@ app.use((req, res, next) => {
 apiRouter.use('/auth', authRoutes);
 apiRouter.use('/jobs', jobsRoutes);
 app.use('/api/v1', apiRouter);
+app.use(errorHandler);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'core-backend', version: 'v1' });

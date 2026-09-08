@@ -52,7 +52,7 @@ export default function RegisterPage() {
       });
 
       setSuccess('Account created successfully! Preparing your workspace…');
-      toast.success('Registration complete', 'Your research workspace is ready.');
+      toast.success('Registration complete', 'Your source review workspace is ready.');
       login(res.data.user);
 
       setTimeout(() => {
@@ -84,7 +84,7 @@ export default function RegisterPage() {
           </div>
           <p className="eyebrow mb-2">Apex Research</p>
           <h1 className="font-serif text-3xl tracking-[-0.03em] text-[#20221d]">Create an account</h1>
-          <p className="mt-2 text-sm text-[#74766f]">Get started with your research workspace</p>
+          <p className="mt-2 text-sm text-[#74766f]">Get started with your source review workspace</p>
         </div>
 
         {/* Card */}
