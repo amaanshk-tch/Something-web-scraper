@@ -63,6 +63,10 @@ export const env = {
   DATA_ENGINE_URL: optionalEnv('DATA_ENGINE_URL', 'http://127.0.0.1:8001'),
   PRESENTATION_SERVICE_URL: optionalEnv('PRESENTATION_SERVICE_URL', 'http://127.0.0.1:8002'),
 
+  // Rate-limit storage strategy.
+  RATE_LIMIT_STORE: optionalEnv('RATE_LIMIT_STORE', 'memory'),
+  REDIS_URL: optionalEnv('REDIS_URL', ''),
+
   // CORS
   ALLOWED_ORIGINS: optionalEnv(
     'ALLOWED_ORIGINS',
@@ -77,3 +81,8 @@ export const env = {
     return this.NODE_ENV === 'production';
   },
 } as const;
+
+if (env.NODE_ENV === 'production' && env.RATE_LIMIT_STORE === 'redis' && !env.REDIS_URL) {
+  console.error('[FATAL] RATE_LIMIT_STORE=redis requires REDIS_URL in production.');
+  process.exit(1);
+}

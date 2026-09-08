@@ -5,7 +5,17 @@ export interface User {
   createdAt?: string;
 }
 
-export type JobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+export type JobStatus =
+  | 'QUEUED'
+  | 'PLANNING'
+  | 'SEARCHING'
+  | 'FETCHING'
+  | 'ANALYZING'
+  | 'SYNTHESIZING'
+  | 'GENERATING_REPORT'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
 
 export interface JobMeta {
   liveResultsOnly?: boolean;
@@ -43,14 +53,30 @@ export interface JobSummary {
   };
 }
 
+export interface JobStreamUpdate {
+  status: JobStatus;
+  progress: number;
+  message: string;
+}
+
 export interface JobDetail extends JobSummary {
   liveResultsOnly: boolean;
+  progress?: number;
+  message?: string;
   results: ResultItem[];
+}
+
+export interface ConceptItem {
+  canonical: string;
+  aliases?: string[];
+  conceptType?: string;
+  confidence?: number;
 }
 
 export interface SearchPayload {
   topic: string;
   keywords: string[];
+  concepts?: ConceptItem[];
   depth: number;
 }
 
@@ -60,9 +86,26 @@ export interface JobCreateResponse {
   status: JobStatus;
 }
 
+export interface ReportJobCreateResponse {
+  message: string;
+  reportJobId: string;
+  status: JobStatus;
+  reportUrl?: string;
+}
+
 export interface JobsPageResponse {
   jobs: JobSummary[];
   nextCursor: string | null;
+}
+
+export interface ApiErrorShape {
+  code: string;
+  message: string;
+  requestId?: string;
+}
+
+export interface ApiErrorResponse {
+  error: ApiErrorShape;
 }
 
 export interface AuthResponse {

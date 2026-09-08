@@ -150,7 +150,7 @@ def generate_analytics_chart(data_summary: Dict[str, int], output_img_path: str)
     ax.spines['left'].set_color('#CBD5E1')
     ax.spines['bottom'].set_color('#94A3B8')
 
-    plt.title("Search Result Sentiment Summary", fontsize=13, fontweight='bold', color='#0F172A', pad=15)
+    plt.title("Search Result Lexical Signal Summary", fontsize=13, fontweight='bold', color='#0F172A', pad=15)
     plt.ylabel("Result Count", fontsize=10, color='#475569', labelpad=8)
     plt.xticks(rotation=15, ha='right', fontsize=9, color='#1E293B')
     plt.yticks(color='#475569')
@@ -192,14 +192,14 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
 
         slide_layout = prs.slide_layouts[1]
         slide = prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = "Key Findings"
+        slide.shapes.title.text = "Retrieved signals"
 
         text_frame = slide.placeholders[1].text_frame
         text_frame.word_wrap = True
 
         effective_bullets = bullet_points if bullet_points else [
             f"Retrieved live search-result snippets for '{topic}'.",
-            "Classified title and snippet text with a lexical sentiment heuristic.",
+            "Classified title and snippet text with a lexical signal heuristic.",
             "Counted keyword hits in titles and snippets for the requested terms.",
             "Included the retrieved source URL and snippet for each result card."
         ]
@@ -216,7 +216,7 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
         text_box = slide.shapes.add_textbox(Inches(0.6), Inches(0.5), Inches(9), Inches(0.8))
         chart_text_frame = text_box.text_frame
         title_paragraph = chart_text_frame.paragraphs[0]
-        title_paragraph.text = "Sentiment counts"
+        title_paragraph.text = "Lexical signal counts"
         title_paragraph.font.size = Pt(22)
         title_paragraph.font.bold = True
         title_paragraph.font.color.rgb = RGBColor(15, 23, 42)
@@ -229,45 +229,66 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
         if os.path.exists(chart_path):
             slide.shapes.add_picture(chart_path, Inches(1.8), Inches(1.6), width=Inches(6.4))
 
-        slide_layout = prs.slide_layouts[5]
-        slide = prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = "Sources"
+        sources = sources or []
+        chunk_size = 5
+        if sources:
+            for page_index in range(0, len(sources), chunk_size):
+                slide_layout = prs.slide_layouts[5]
+                slide = prs.slides.add_slide(slide_layout)
+                slide.shapes.title.text = f"Sources {page_index + 1}-{min(page_index + chunk_size, len(sources))}"
 
-        rows = min(len(sources) + 1, 6)
-        cols = 3
-        table_shape = slide.shapes.add_table(rows, cols, Inches(0.6), Inches(1.5), Inches(8.8), Inches(3.2))
-        table = table_shape.table
+                rows = min(len(sources[page_index:page_index + chunk_size]) + 1, 6)
+                cols = 3
+                table_shape = slide.shapes.add_table(rows, cols, Inches(0.6), Inches(1.5), Inches(8.8), Inches(3.2))
+                table = table_shape.table
 
-        table.columns[0].width = Inches(2.8)
-        table.columns[1].width = Inches(4.5)
-        table.columns[2].width = Inches(1.5)
+                table.columns[0].width = Inches(2.8)
+                table.columns[1].width = Inches(4.5)
+                table.columns[2].width = Inches(1.5)
 
-        headers = ["Source / Title", "Snippet", "Sentiment"]
-        for col_idx, text in enumerate(headers):
-            cell = table.cell(0, col_idx)
-            cell.text = text
-            for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.bold = True
-                paragraph.font.size = Pt(11)
-                paragraph.font.color.rgb = RGBColor(255, 255, 255)
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = RGBColor(30, 58, 138)
+                headers = ["Source / Title", "Snippet", "Lexical signal"]
+                for col_idx, text in enumerate(headers):
+                    cell = table.cell(0, col_idx)
+                    cell.text = text
+                    for paragraph in cell.text_frame.paragraphs:
+                        paragraph.font.bold = True
+                        paragraph.font.size = Pt(11)
+                        paragraph.font.color.rgb = RGBColor(255, 255, 255)
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = RGBColor(30, 58, 138)
 
-        for row_index in range(1, rows):
-            source = sources[row_index - 1] if row_index - 1 < len(sources) else {}
-            raw_title = source.get("title") or source.get("sourceUrl") or f"Source {row_index}"
-            title_val = sanitize_text(str(raw_title), max_len=40)
-            snippet_text = sanitize_text(str(source.get("snippet") or "Retrieved result snippet unavailable."), max_len=80)
-            snippet_val = snippet_text + ("..." if len(str(source.get("snippet", ""))) > 80 else "")
-            sentiment_val = sanitize_text(str(source.get("sentiment") or "NEUTRAL"), max_len=15).upper()
+                slice_start = page_index
+                slice_end = min(page_index + chunk_size, len(sources))
+                for row_index in range(1, min(slice_end - slice_start + 1, rows)):
+                    source = sources[slice_start + row_index - 1]
+                    raw_title = source.get("title") or source.get("sourceUrl") or f"Source {row_index}"
+                    source_url = source.get("sourceUrl") or ""
+                    title_val = sanitize_text(str(raw_title), max_len=40)
+                    if source_url and raw_title and raw_title != source_url:
+                        title_val = f"{title_val}\n{source_url}"
+                    elif source_url:
+                        title_val = source_url
 
-            row_data = [title_val, snippet_val, sentiment_val]
-            for col_index, value in enumerate(row_data):
-                cell = table.cell(row_index, col_index)
-                cell.text = value
-                for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.size = Pt(10)
-                    paragraph.font.color.rgb = RGBColor(51, 65, 85)
+                    snippet_text = sanitize_text(str(source.get("snippet") or "Retrieved result snippet unavailable."), max_len=80)
+                    snippet_val = snippet_text + ("..." if len(str(source.get("snippet", ""))) > 80 else "")
+                    sentiment_val = sanitize_text(str(source.get("sentiment") or "NEUTRAL"), max_len=15).upper()
+
+                    row_data = [title_val, snippet_val, sentiment_val]
+                    for col_index, value in enumerate(row_data):
+                        cell = table.cell(row_index, col_index)
+                        cell.text = value
+                        for paragraph in cell.text_frame.paragraphs:
+                            paragraph.font.size = Pt(10)
+                            paragraph.font.color.rgb = RGBColor(51, 65, 85)
+
+        else:
+            slide_layout = prs.slide_layouts[5]
+            slide = prs.slides.add_slide(slide_layout)
+            slide.shapes.title.text = "Sources"
+            text_box = slide.shapes.add_textbox(Inches(0.6), Inches(1.5), Inches(8.8), Inches(3.2))
+            text_frame = text_box.text_frame
+            paragraph = text_frame.paragraphs[0]
+            paragraph.text = "No sources were returned for this analysis."
 
         prs.save(ppt_path)
 

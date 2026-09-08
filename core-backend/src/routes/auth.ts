@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { log } from '../lib/logger';
@@ -54,6 +55,28 @@ function sanitizeAuthString(val: unknown, maxLen = 80): string {
     .slice(0, maxLen);
 }
 
+function hashRefreshToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+async function createServerSession(user: { id: string; email: string }, refreshToken: string, req: AuthenticatedRequest) {
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const userAgent = Array.isArray(req.headers['user-agent'])
+    ? req.headers['user-agent'][0]
+    : req.headers['user-agent'] || 'unknown';
+  const ipAddress = req.ip || (Array.isArray(req.headers['x-forwarded-for'])
+    ? req.headers['x-forwarded-for'][0]
+    : req.headers['x-forwarded-for']) || 'unknown';
+  const deviceName = Array.isArray(req.headers['x-device-name'])
+    ? req.headers['x-device-name'][0]
+    : req.headers['x-device-name'] || 'web';
+
+  await prisma.$executeRaw`
+    INSERT INTO "Session" ("id", "userId", "refreshTokenHash", "userAgent", "ipAddress", "deviceName", "expiresAt", "createdAt", "updatedAt")
+    VALUES (${randomUUID()}, ${user.id}, ${hashRefreshToken(refreshToken)}, ${userAgent}, ${ipAddress}, ${deviceName}, ${expiresAt}, NOW(), NOW())
+  `;
+}
+
 const registerSchema = z.object({
   email: z.string().trim().toLowerCase().email('Please enter a valid email address').max(254),
   password: z.string().min(12, 'Password must be at least 12 characters').max(256),
@@ -73,12 +96,55 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required').max(256),
 });
 
-const cookieOptions = {
+const accessCookieOptions = {
   httpOnly: true,
   secure: env.isProduction,
   sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  maxAge: 15 * 60 * 1000,
 };
+
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: env.isProduction,
+  sameSite: 'lax' as const,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+};
+
+const csrfCookieOptions = {
+  httpOnly: false,
+  secure: env.isProduction,
+  sameSite: 'lax' as const,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+};
+
+function signAccessToken(user: { id: string; email: string }) {
+  return jwt.sign({
+    id: user.id,
+    email: user.email,
+    sub: user.id,
+  }, env.JWT_SECRET, {
+    expiresIn: '15m',
+    issuer: 'analytics-core-backend',
+    audience: 'analytics-app',
+  });
+}
+
+function signRefreshToken(user: { id: string; email: string }) {
+  return jwt.sign({
+    id: user.id,
+    email: user.email,
+    sub: user.id,
+    type: 'refresh',
+  }, env.JWT_SECRET, {
+    expiresIn: '30d',
+    issuer: 'analytics-core-backend',
+    audience: 'analytics-app',
+  });
+}
+
+function createCsrfToken(): string {
+  return randomBytes(32).toString('hex');
+}
 
 router.post('/register', registerLimiter, async (req, res) => {
   try {
@@ -108,12 +174,16 @@ router.post('/register', registerLimiter, async (req, res) => {
       select: { id: true, email: true, name: true, createdAt: true },
     });
 
-    const token = jwt.sign({ id: user.id, email: user.email }, env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const accessToken = signAccessToken({ id: user.id, email: user.email });
+    const refreshToken = signRefreshToken({ id: user.id, email: user.email });
 
-    res.cookie('token', token, cookieOptions);
-    return res.status(201).json({ user });
+    await createServerSession(user, refreshToken, req as AuthenticatedRequest);
+
+    const csrfToken = createCsrfToken();
+    res.cookie('token', accessToken, accessCookieOptions);
+    res.cookie('refresh_token', refreshToken, refreshCookieOptions);
+    res.cookie('csrf_token', csrfToken, csrfCookieOptions);
+    return res.status(201).json({ user, csrfToken });
   } catch (error) {
     log('error', 'auth.register_failed', { requestId: (req as AuthenticatedRequest).requestId, error: error instanceof Error ? error.message : 'Unknown error' });
     return res.status(400).json({ error: 'Registration failed. Please check your information.' });
@@ -141,13 +211,18 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or credentials' });
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email }, env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const accessToken = signAccessToken({ id: user.id, email: user.email });
+    const refreshToken = signRefreshToken({ id: user.id, email: user.email });
 
-    res.cookie('token', token, cookieOptions);
+    await createServerSession(user, refreshToken, req as AuthenticatedRequest);
+
+    const csrfToken = createCsrfToken();
+    res.cookie('token', accessToken, accessCookieOptions);
+    res.cookie('refresh_token', refreshToken, refreshCookieOptions);
+    res.cookie('csrf_token', csrfToken, csrfCookieOptions);
     return res.json({
       user: { id: user.id, email: user.email, name: user.name },
+      csrfToken,
     });
   } catch (error) {
     log('error', 'auth.login_failed', { requestId: (req as AuthenticatedRequest).requestId, error: error instanceof Error ? error.message : 'Unknown error' });
@@ -155,9 +230,30 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
-router.post('/logout', logoutLimiter, (_req, res) => {
+router.post('/logout', logoutLimiter, async (req: AuthenticatedRequest, res) => {
+  const refreshToken = req.cookies?.refresh_token as string | undefined;
+  if (refreshToken) {
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+    await prisma.$executeRaw`
+      UPDATE "Session"
+      SET "revokedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "refreshTokenHash" = ${refreshTokenHash}
+        AND "revokedAt" IS NULL
+    `;
+  }
+
   res.clearCookie('token', {
     httpOnly: true,
+    secure: env.isProduction,
+    sameSite: 'lax',
+  });
+  res.clearCookie('refresh_token', {
+    httpOnly: true,
+    secure: env.isProduction,
+    sameSite: 'lax',
+  });
+  res.clearCookie('csrf_token', {
+    httpOnly: false,
     secure: env.isProduction,
     sameSite: 'lax',
   });

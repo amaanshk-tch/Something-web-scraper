@@ -20,7 +20,7 @@ export function createDemoJob(payload: SearchPayload): string {
     topic: payload.topic,
     keywords: payload.keywords,
     depth: payload.depth,
-    status: 'PENDING',
+    status: 'QUEUED',
     errorMessage: null,
     bullets: [],
     sentimentData: { Positive: 3, Neutral: 3, Negative: 2 },
@@ -31,7 +31,11 @@ export function createDemoJob(payload: SearchPayload): string {
   };
   jobs.set(id, job);
 
-  window.setTimeout(() => updateDemoJob(id, 'PROCESSING'), 500);
+  window.setTimeout(() => updateDemoJob(id, 'PLANNING'), 250);
+  window.setTimeout(() => updateDemoJob(id, 'SEARCHING'), 500);
+  window.setTimeout(() => updateDemoJob(id, 'FETCHING'), 900);
+  window.setTimeout(() => updateDemoJob(id, 'ANALYZING'), 1350);
+  window.setTimeout(() => updateDemoJob(id, 'SYNTHESIZING'), 1750);
   window.setTimeout(() => {
     const current = jobs.get(id);
     if (!current) return;

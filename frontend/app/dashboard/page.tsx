@@ -111,7 +111,7 @@ export default function DashboardPage() {
           if (res.data.status === 'COMPLETED') {
             toast.success(
               'Analysis complete',
-              `Discovered ${res.data.results?.length ?? 0} sources with sentiment signals.`
+              `Discovered ${res.data.results?.length ?? 0} sources with lexical signals.`
             );
           } else if (res.data.status === 'FAILED') {
             toast.error(
@@ -157,7 +157,7 @@ export default function DashboardPage() {
   const handleStartSearch = async (payload: SearchPayload) => {
     setSearching(true);
     setSubmitError(null);
-    previousStatusRef.current = 'PENDING';
+    previousStatusRef.current = 'QUEUED';
 
     try {
       if (DEMO_MODE) {
@@ -178,7 +178,7 @@ export default function DashboardPage() {
     }
   };
 
-  const sentimentEntries = jobData?.sentimentData
+  const lexicalSignalEntries = jobData?.sentimentData
     ? Object.entries(jobData.sentimentData).filter(
         (entry): entry is [string, number] => entry[0] !== '_meta' && typeof entry[1] === 'number'
       )
@@ -285,8 +285,8 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3 border-b border-[#e1ddd4] pb-4">
               <CheckCircle className="h-4 w-4 text-[#2e6b3e]" />
               <div>
-                <p className="eyebrow">Interpretation</p>
-                <h3 className="mt-1 font-serif text-2xl">Key findings</h3>
+                <p className="eyebrow">Signals</p>
+                <h3 className="mt-1 font-serif text-2xl">Retrieved signals</h3>
               </div>
             </div>
             <div className="mt-5 space-y-4">
@@ -311,11 +311,11 @@ export default function DashboardPage() {
               <BarChart3 className="h-4 w-4" />
               <div>
                 <p className="eyebrow">Signals</p>
-                <h3 className="mt-1 font-serif text-2xl">Sentiment</h3>
+                <h3 className="mt-1 font-serif text-2xl">Lexical signal</h3>
               </div>
             </div>
             <div className="mt-5 space-y-3">
-              {sentimentEntries.map(([label, value]) => (
+              {lexicalSignalEntries.map(([label, value]) => (
                 <div
                   key={label}
                   className="flex items-center justify-between border-b border-[#ece8e0] py-2.5"

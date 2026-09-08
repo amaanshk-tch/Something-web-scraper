@@ -16,12 +16,19 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
+from search_providers import (
+    get_provider,
+    decode_duckduckgo_href,
+    extract_result_from_card,
+)
 
 if os.getenv("APP_ENV", "development") != "production":
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ---------------------------------------------------------------------------
-# Rate limiting — in-memory, keyed by remote IP.
+# Rate limiting — local in-memory, keyed by remote IP.
+# Production should be moved to Redis or another shared backing store so
+# every API instance shares the same limit counters.
 # Acts as a defence-in-depth layer even though /scrape is already protected
 # by the X-Internal-Key guard.
 # ---------------------------------------------------------------------------
@@ -117,6 +124,7 @@ class ScrapeRequest(BaseModel):
     topic: str = Field(..., description="Target search topic or domain")
     keywords: List[str] = Field(default_factory=list, description="Specific keyword filters to count in result titles and snippets")
     depth: int = Field(default=5, description="Number of results to extract and process")
+    provider: str = Field(default="duckduckgo", description="Search provider to use: duckduckgo, bing, serper, tavily, or mock")
 
 
 class ScrapedResultItem(BaseModel):
@@ -146,79 +154,26 @@ HEADERS = {
 }
 
 
-def decode_duckduckgo_href(href: str) -> str:
-    if "uddg=" in href:
-        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-        if "uddg" in parsed and parsed["uddg"]:
-            return parsed["uddg"][0]
-    return href
+# Provider abstraction is defined in search_providers.py.
+# The application now consults a provider factory instead of hardwiring DuckDuckGo HTML scraping.
 
 
-def extract_result_from_card(card: Tag) -> Optional[Dict[str, str]]:
-    title_elem = card.find("a", class_="result__a")
-    snippet_elem = card.find(class_="result__snippet")
-    url_elem = card.find("a", class_="result__url")
-
-    href = ""
-    for candidate in (title_elem, url_elem):
-        if candidate and candidate.get("href"):
-            candidate_href = candidate.get("href", "")
-            decoded = decode_duckduckgo_href(candidate_href)
-            if is_safe_url(decoded):
-                href = decoded
-                break
-
-    if not href:
-        return None
-
-    raw_title = title_elem.get_text(" ", strip=True) if title_elem else ""
-    raw_snippet = snippet_elem.get_text(" ", strip=True) if snippet_elem else ""
-
-    if not raw_title and not raw_snippet:
-        return None
-
-    parsed_url = urllib.parse.urlparse(href)
-    fallback_title = parsed_url.netloc or href
-
-    clean_title = sanitize_text(raw_title or fallback_title, max_length=300)
-    clean_snip = sanitize_text(raw_snippet or clean_title, max_length=1500)
-
-    return {
-        "url": href,
-        "title": clean_title,
-        "snippet": clean_snip,
-    }
-
-
-def search_web_sources(topic: str, depth: int = 5) -> List[Dict[str, str]]:
+def search_web_sources(topic: str, depth: int = 5, provider_name: str = "duckduckgo") -> List[Dict[str, str]]:
     """
-    Fetches real search result cards from DuckDuckGo HTML endpoint.
-    Returns only genuine extracted results - no synthetic backfill.
-    If fewer results are available than requested, returns what was found.
+    Fetches real search result records through a SearchProvider implementation.
+    The default is DuckDuckGo; other providers can be plugged in via the provider registry.
     """
-    results: List[Dict[str, str]] = []
-
-    try:
-        safe_topic = sanitize_text(topic, max_length=200)
-        query_param = urllib.parse.quote_plus(safe_topic)
-        url = f"https://html.duckduckgo.com/html/?q={query_param}"
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            html = resp.read().decode('utf-8', errors='ignore')
-            soup = BeautifulSoup(html, "html.parser")
-
-            cards = soup.find_all("div", class_="result")
-            for card in cards:
-                if len(results) >= depth:
-                    break
-
-                parsed_card = extract_result_from_card(card)
-                if parsed_card:
-                    results.append(parsed_card)
-    except Exception as error:
-        print(f"[Search Engine Warning] Live scrape encountered error: {error}")
-
-    return results[:depth]
+    provider = get_provider(provider_name)
+    raw_results = provider.search(topic, depth)
+    return [
+        {
+            "url": result.get("url", ""),
+            "title": result.get("title", ""),
+            "snippet": result.get("snippet", ""),
+        }
+        for result in raw_results
+        if result.get("url") and result.get("title")
+    ]
 
 
 @app.get("/health")
@@ -240,8 +195,9 @@ def scrape_and_analyze(payload: ScrapeRequest, request: Request):
 
     keywords = sanitize_keywords(payload.keywords, max_count=20, max_kw_len=50)
     depth = max(1, min(int(payload.depth), 15))
+    provider_name = sanitize_text(payload.provider, max_length=50).lower() or "duckduckgo"
 
-    sources = search_web_sources(topic, depth=depth)
+    sources = search_web_sources(topic, depth=depth, provider_name=provider_name)
     live_results_only = len(sources) < depth
 
     extracted_items = []
@@ -288,12 +244,12 @@ def scrape_and_analyze(payload: ScrapeRequest, request: Request):
     bullets = [
         f"Retrieved {total} search-result snippet{'s' if total != 1 else ''} for '{topic}'.",
         (
-            f"Lexical sentiment heuristic: {metrics['Positive']} positive, "
+            f"Lexical signal heuristic: {metrics['Positive']} positive, "
             f"{metrics['Negative']} negative, {metrics['Neutral']} neutral result{'s' if total != 1 else ''}."
         ),
         f"Keyword hits across titles and snippets: {keyword_hits} occurrence{'s' if keyword_hits != 1 else ''} of target term{'s' if len(keywords) != 1 else ''}.",
         (
-            "Note: sentiment is estimated by keyword counting and does not account for negation or context. "
+            "Note: lexical signal is estimated by keyword counting and does not account for negation or context. "
             "Results are search-result snippets, not full source documents."
         ),
     ]

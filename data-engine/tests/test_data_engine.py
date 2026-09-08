@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from bs4 import BeautifulSoup
 from main import decode_duckduckgo_href, extract_result_from_card
+from search_providers import get_provider, MockSearchProvider, DuckDuckGoProvider
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
 
 
@@ -16,8 +17,34 @@ class SentimentTests(unittest.TestCase):
         self.assertEqual(analyze_sentiment_and_metrics("risk decline")[0], "negative")
         self.assertEqual(analyze_sentiment_and_metrics("growth risk")[0], "neutral")
 
+    def test_describes_signal_output_as_lexical_signal_not_analytical_findings(self):
+        provider = get_provider("mock")
+        results = provider.search("test query", depth=2)
+        self.assertEqual(results, [
+            {
+                "url": "https://example.com/alpha",
+                "title": "test query headline",
+                "snippet": "Sample retrieved signal from the mock provider.",
+            },
+            {
+                "url": "https://example.com/beta",
+                "title": "test query follow-up",
+                "snippet": "Another sample source snippet for the mock provider.",
+            },
+        ])
+
     def test_trims_a_long_snippet_at_a_word_boundary(self):
         self.assertEqual(clean_snippet("one two three four", max_chars=10), "one two...")
+
+
+class ProviderRegistrationTests(unittest.TestCase):
+    def test_provider_factory_returns_a_supported_provider(self):
+        provider = get_provider("mock")
+        self.assertIsInstance(provider, MockSearchProvider)
+
+    def test_provider_factory_defaults_to_duckduckgo_when_unknown(self):
+        provider = get_provider("unknown-provider")
+        self.assertIsInstance(provider, DuckDuckGoProvider)
 
 
 class SearchParsingTests(unittest.TestCase):

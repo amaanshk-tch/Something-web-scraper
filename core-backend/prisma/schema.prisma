@@ -8,20 +8,118 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id           String    @id @default(uuid())
+  email        String    @unique
   passwordHash String
   name         String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   jobs         Job[]
+  sessions     Session[]
+  memberships  Membership[]
+  workspaces   Workspace[]
+}
+
+model Workspace {
+  id             String            @id @default(uuid())
+  name           String
+  ownerId        String
+  owner          User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  memberships    Membership[]
+  researchProjects ResearchProject[]
+
+  @@index([ownerId])
+}
+
+model Membership {
+  id          String           @id @default(uuid())
+  workspaceId String
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        MembershipRole   @default(MEMBER)
+  createdAt   DateTime         @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model ResearchProject {
+  id           String          @id @default(uuid())
+  workspaceId  String
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  researchRuns ResearchRun[]
+  insights     Insight[]
+  reports      Report[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model ResearchRun {
+  id             String            @id @default(uuid())
+  projectId      String
+  project        ResearchProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runName        String?
+  status         JobStatus         @default(QUEUED)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  sources        Source[]
+  searchQueries  SearchQuery[]      @relation("ResearchRunQueries")
+
+  @@index([projectId, createdAt])
+}
+
+model SearchQuery {
+  id              String         @id @default(uuid())
+  researchRunId   String?
+  researchRun     ResearchRun?   @relation("ResearchRunQueries", fields: [researchRunId], references: [id], onDelete: SetNull)
+  queryText       String
+  keywords        String[]
+  filters         Json?
+  createdAt       DateTime       @default(now())
+
+  @@index([researchRunId])
+}
+
+model Session {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String?   @unique
+  userAgent       String?
+  ipAddress       String?
+  deviceName      String?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  expiresAt       DateTime
+
+  @@index([userId, revokedAt])
 }
 
 enum JobStatus {
-  PENDING
-  PROCESSING
+  QUEUED
+  PLANNING
+  SEARCHING
+  FETCHING
+  ANALYZING
+  SYNTHESIZING
+  GENERATING_REPORT
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 model Job {
@@ -32,13 +130,15 @@ model Job {
   topic         String
   keywords      String[]
   depth         Int       @default(5)
-  status        JobStatus @default(PENDING)
+  status        JobStatus @default(QUEUED)
   sentimentData Json?
   bullets       String[]
   errorMessage  String?
+  errorCode     String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  results       Result[]
+  results       Source[]
+  concepts      Concept[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -46,16 +146,152 @@ model Job {
   @@index([id, userId])
 }
 
-model Result {
-  id        String   @id @default(uuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  sourceUrl String
-  title     String
-  snippet   String
-  sentiment String   @default("neutral")
-  mentions  Int      @default(1)
-  createdAt DateTime @default(now())
+model Concept {
+  id           String   @id @default(uuid())
+  jobId        String
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  canonical    String
+  aliases      String[] @default([])
+  conceptType  String?  @default("semantic")
+  confidence   Float?   @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([jobId, canonical])
+}
+
+enum SourceType {
+  WEB
+  NEWS
+  BLOG
+  PDF
+  SOCIAL
+  VIDEO
+  OTHER
+}
+
+model Source {
+  id               String          @id @default(uuid())
+  jobId            String?
+  job              Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  researchRunId    String?
+  researchRun      ResearchRun?    @relation(fields: [researchRunId], references: [id], onDelete: SetNull)
+  sourceUrl        String
+  canonicalUrl     String?
+  title            String
+  snippet          String
+  sentiment        String          @default("neutral")
+  mentions         Int             @default(1)
+  domain           String?
+  sourceType       SourceType      @default(WEB)
+  publishedAt      DateTime?
+  retrievedAt       DateTime        @default(now())
+  author           String?
+  publisher        String?
+  contentHash      String?
+  wordCount        Int?
+  language         String?         @default("en")
+  relevanceScore   Float?
+  credibilityScore Float?
+  duplicateGroup   String?
+  createdAt        DateTime        @default(now())
+  snapshots        SourceSnapshot[]
+  claims           Claim[]
 
   @@index([jobId, mentions])
+  @@index([domain])
+  @@index([duplicateGroup])
+}
+
+model SourceSnapshot {
+  id            String    @id @default(uuid())
+  sourceId      String
+  source        Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  fetchedAt     DateTime  @default(now())
+  title         String?
+  snippet       String?
+  sourceUrl    String?
+  contentHash   String?
+  rawBody       String?
+  metadataJson  Json?
+
+  @@index([sourceId, fetchedAt])
+}
+
+model Claim {
+  id           String      @id @default(uuid())
+  sourceId     String
+  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  text         String
+  claimType    String?
+  confidence   Float?
+  createdAt    DateTime    @default(now())
+  evidence     Evidence[]
+  insights     Insight[]
+
+  @@index([sourceId, claimType])
+}
+
+model Evidence {
+  id          String    @id @default(uuid())
+  claimId     String
+  claim       Claim      @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  excerpt     String
+  url         String?
+  strength    Float?
+  createdAt   DateTime   @default(now())
+
+  @@index([claimId])
+}
+
+model Insight {
+  id            String          @id @default(uuid())
+  projectId     String
+  project       ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  claimId       String?
+  claim         Claim?          @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  title         String
+  summary       String
+  kind          String?
+  score         Float?
+  createdAt     DateTime        @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Report {
+  id            String           @id @default(uuid())
+  projectId     String
+  project       ResearchProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  createdAt     DateTime         @default(now())
+  versions      ReportVersion[]
+  exports       Export[]         @relation("ReportExports")
+
+  @@index([projectId, createdAt])
+}
+
+model ReportVersion {
+  id            String    @id @default(uuid())
+  reportId      String
+  report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  version       Int       @default(1)
+  body          Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([reportId, version])
+}
+
+model Export {
+  id            String    @id @default(uuid())
+  reportId      String?
+  report        Report?   @relation("ReportExports", fields: [reportId], references: [id], onDelete: SetNull)
+  format        String    @default("pptx")
+  status        String    @default("QUEUED")
+  url           String?
+  createdAt     DateTime  @default(now())
+
+  @@index([reportId])
+  @@index([status, createdAt])
 }

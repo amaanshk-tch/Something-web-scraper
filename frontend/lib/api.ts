@@ -8,8 +8,8 @@ export const apiClient = axios.create({
 });
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError<{ error?: string }>(error)) {
-    return error.response?.data?.error || fallback;
+  if (axios.isAxiosError<{ error?: { message?: string } }>(error)) {
+    return error.response?.data?.error?.message || fallback;
   }
   if (error instanceof Error && error.message) {
     return error.message;

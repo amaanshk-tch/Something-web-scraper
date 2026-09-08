@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type Options } from 'express-rate-limit';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
@@ -14,6 +14,7 @@ import { disconnectPrisma } from './lib/prisma';
 import { startJobReconciliation } from './lib/jobReconciliation';
 import { startJobWorker } from './lib/jobWorker';
 import { requestContext } from './middleware/requestContext';
+import { enforceOriginOnly, enforceOriginAndCsrf } from './middleware/csrf';
 import authRoutes from './routes/auth';
 import jobsRoutes from './routes/jobs';
 
@@ -28,13 +29,30 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const apiRouter = express.Router();
-const limiter = rateLimit({
+
+let limiterConfig: Partial<Options> = {
   windowMs: 15 * 60 * 1000,
   max: 200,
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-});
+};
+
+if (env.RATE_LIMIT_STORE === 'redis' && env.REDIS_URL) {
+  try {
+    const redis = require('redis');
+    const RedisStore = require('rate-limit-redis');
+    const client = redis.createClient({ url: env.REDIS_URL });
+    limiterConfig.store = new RedisStore({ client });
+    log('info', 'rate_limit.redis_enabled', { redisUrlConfigured: true });
+  } catch (error) {
+    log('warn', 'rate_limit.redis_fallback_to_memory', {
+      error: error instanceof Error ? error.message : 'Unknown redis limiter fallback error',
+    });
+  }
+}
+
+const limiter = rateLimit(limiterConfig);
 
 app.use(requestContext);
 app.use(limiter);
@@ -47,6 +65,13 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '32kb' }));
+app.use((req, res, next) => {
+  const authBootstrapPaths = new Set(['/api/v1/auth/login', '/api/v1/auth/register']);
+  if (authBootstrapPaths.has(req.originalUrl)) {
+    return enforceOriginOnly(req, res, next);
+  }
+  return enforceOriginAndCsrf(req, res, next);
+});
 
 apiRouter.use('/auth', authRoutes);
 apiRouter.use('/jobs', jobsRoutes);

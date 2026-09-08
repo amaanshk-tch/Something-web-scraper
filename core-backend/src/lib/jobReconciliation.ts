@@ -8,8 +8,12 @@ export async function reconcileStaleJobs(): Promise<number> {
   try {
     const staleCutoff = new Date(Date.now() - STALE_JOB_THRESHOLD_MS);
     const result = await prisma.job.updateMany({
-      where: { status: 'PROCESSING', updatedAt: { lt: staleCutoff } },
-      data: { status: 'FAILED', errorMessage: 'Job timed out after exceeding processing duration limit.' },
+      where: { status: { in: ['SEARCHING', 'FETCHING', 'ANALYZING', 'SYNTHESIZING', 'PLANNING', 'GENERATING_REPORT'] }, updatedAt: { lt: staleCutoff } },
+      data: {
+        status: 'FAILED',
+        errorMessage: 'Job timed out after exceeding processing duration limit.',
+        errorCode: 'JOB_STALE_TIMEOUT',
+      },
     });
 
     if (result.count > 0) log('warn', 'jobs.reconciled_stale', { count: result.count });
