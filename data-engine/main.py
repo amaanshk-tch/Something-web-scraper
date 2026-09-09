@@ -8,10 +8,7 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from bs4 import BeautifulSoup, Tag
 import hmac
-import urllib.parse
-import urllib.request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -34,11 +31,8 @@ def get_limiter_key(request: Request) -> str:
         return f"request:{request_id}"
 
     return f"ip:{get_remote_address(request)}"
-from search_providers import (
-    get_provider,
-    decode_duckduckgo_href,
-    extract_result_from_card,
-)
+from search_providers import get_provider
+from utils import sanitize_text
 
 if os.getenv("APP_ENV", "development") != "production":
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -87,25 +81,6 @@ async def log_requests(request: Request, call_next):
 # Input Sanitization Helpers
 # ---------------------------------------------------------------------------
 
-def sanitize_text(value: str, max_length: int = 200) -> str:
-    """
-    Sanitizes string inputs:
-    - Strips non-printable and control characters (ASCII 0-31, 127-159)
-    - Strips HTML / XML tags to prevent script injection
-    - Normalizes multiple spaces/newlines/tabs into a single space
-    - Truncates to max_length
-    """
-    if not value or not isinstance(value, str):
-        return ""
-    # Strip non-printable and control characters
-    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
-    # Strip HTML tags
-    cleaned = re.sub(r'<[^>]*>', '', cleaned)
-    # Collapse whitespace
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    return cleaned[:max_length]
-
-
 def sanitize_keywords(keywords: List[str], max_count: int = 20, max_kw_len: int = 50) -> List[str]:
     """
     Sanitizes, lowercases, deduplicates, and limits keyword list items.
@@ -122,18 +97,6 @@ def sanitize_keywords(keywords: List[str], max_count: int = 20, max_kw_len: int 
             if len(cleaned_keywords) >= max_count:
                 break
     return cleaned_keywords
-
-
-def is_safe_url(url: str) -> bool:
-    """
-    Ensures URL uses safe HTTP or HTTPS scheme and has a valid domain.
-    Rejects javascript:, data:, file:, etc.
-    """
-    try:
-        parsed = urllib.parse.urlparse(url)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except Exception:
-        return False
 
 
 class ScrapeRequest(BaseModel):
@@ -160,18 +123,9 @@ class ScrapeResponse(BaseModel):
     results: List[ScrapedResultItem]
 
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-
 # Provider abstraction is defined in search_providers.py.
 # The application now consults a provider factory and reads the default provider from the environment.
+# Shared HTTP request headers are defined in utils.py.
 
 
 def search_web_sources(topic: str, depth: int = 5, provider_name: str = os.getenv("SEARCH_PROVIDER", "serper")) -> List[Dict[str, str]]:

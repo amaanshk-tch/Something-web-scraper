@@ -1,12 +1,13 @@
 import json
 import os
-import re
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TypedDict
 
 from bs4 import BeautifulSoup, Tag
+
+from utils import HEADERS, is_safe_url, sanitize_text
 
 
 class SearchResult(TypedDict):
@@ -21,40 +22,6 @@ class SearchProvider(ABC):
     @abstractmethod
     def search(self, query: str, depth: int = 5) -> List[SearchResult]:
         raise NotImplementedError
-
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-
-def is_safe_url(url: str) -> bool:
-    """
-    Ensures URL uses safe HTTP or HTTPS scheme and has a valid domain.
-    Rejects javascript:, data:, file:, etc.
-    """
-    try:
-        parsed = urllib.parse.urlparse(url)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except Exception:
-        return False
-
-
-def sanitize_text(value: str, max_length: int = 200) -> str:
-    """Minimal sanitizer shared by the search providers module."""
-    if not value or not isinstance(value, str):
-        return ""
-    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
-    cleaned = re.sub(r'<[^>]*>', '', cleaned)
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    if len(cleaned) > max_length:
-        cleaned = cleaned[:max_length]
-    return cleaned
 
 
 def decode_duckduckgo_href(href: str) -> str:

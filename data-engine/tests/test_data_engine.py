@@ -6,8 +6,14 @@ os.environ.setdefault("INTERNAL_SERVICE_KEY", "test-key")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from bs4 import BeautifulSoup
-from main import decode_duckduckgo_href, extract_result_from_card, get_limiter_key
-from search_providers import get_provider, MockSearchProvider, DuckDuckGoProvider
+from main import get_limiter_key
+from search_providers import (
+    get_provider,
+    MockSearchProvider,
+    DuckDuckGoProvider,
+    decode_duckduckgo_href,
+    extract_result_from_card,
+)
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
 
 

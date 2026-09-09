@@ -57,10 +57,6 @@ const presentationLimiter = rateLimit({
   handler: (req, res) => rateLimitError(req as AuthenticatedRequest, res, 'Too many report requests. Please try again later.'),
 });
 
-const createReportJobSchema = z.object({
-  jobId: z.string().uuid(),
-});
-
 function sanitizeInputString(val: unknown, maxLen = 200): string {
   if (typeof val !== 'string') return '';
   return val
@@ -262,15 +258,6 @@ function getJobStreamWatcher(jobId: string, userId: string): JobStreamWatcher {
   jobStreamWatchers.set(jobId, watcher);
   return watcher;
 }
-
-router.post('/reports', authenticateToken, createJobLimiter, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    return sendError(res, 501, 'Report export generation is not implemented yet.', req.requestId, 'REPORT_EXPORT_NOT_IMPLEMENTED');
-  } catch (error) {
-    log('error', 'report.job.create_failed', { requestId: req.requestId, userId: req.user?.id, error: error instanceof Error ? error.message : 'Unknown error' });
-    return sendError(res, 500, 'Failed to create report job', req.requestId, 'REPORT_JOB_CREATE_FAILED');
-  }
-});
 
 router.post('/', authenticateToken, createJobLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
