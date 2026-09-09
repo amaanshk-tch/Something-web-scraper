@@ -252,12 +252,40 @@ router.post('/refresh', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Session not found' });
     }
 
-    if (session.revokedAt || session.expiresAt <= new Date()) {
+    if (session.expiresAt <= new Date()) {
       return res.status(401).json({ error: 'Session expired' });
     }
 
     if (session.userId !== decoded.id) {
       return res.status(403).json({ error: 'Session user mismatch' });
+    }
+
+    // Atomically revoke this session. Only one refresh can claim a given token —
+    // a second presenter will find the session already revoked.
+    const revokedCount = await prisma.$executeRaw`
+      UPDATE "Session"
+      SET "revokedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "id" = ${session.id}
+        AND "revokedAt" IS NULL
+    `;
+
+    if (revokedCount === 0) {
+      // The presented token was already rotated (its session is revoked).
+      // That means it's either being replayed from a stolen copy, or it's a
+      // stale token. Treat it as a compromised credential and kill every
+      // session the user has.
+      log('error', 'auth.refresh_reuse_detected', {
+        requestId: (req as AuthenticatedRequest).requestId,
+        userId: session.userId,
+        sessionId: session.id,
+      });
+      await prisma.$executeRaw`
+        UPDATE "Session"
+        SET "revokedAt" = NOW(), "updatedAt" = NOW()
+        WHERE "userId" = ${session.userId}
+          AND "revokedAt" IS NULL
+      `;
+      return res.status(401).json({ error: 'Invalid refresh token' });
     }
 
     const dbUser = await prisma.user.findUnique({
@@ -268,10 +296,17 @@ router.post('/refresh', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'User not found' });
     }
 
+    // Rotate the refresh token: issue a fresh one and store its hash on a
+    // new session row. The old token is now useless; replaying it triggers
+    // the reuse detection above.
+    const newRefreshToken = signRefreshToken({ id: dbUser.id, email: dbUser.email });
+    await createServerSession(dbUser, newRefreshToken, req as AuthenticatedRequest);
+
     const accessToken = signAccessToken({ id: dbUser.id, email: dbUser.email });
     const csrfToken = createCsrfToken();
 
     res.cookie('token', accessToken, accessCookieOptions);
+    res.cookie('refresh_token', newRefreshToken, refreshCookieOptions);
     res.cookie('csrf_token', csrfToken, csrfCookieOptions);
 
     return res.json({

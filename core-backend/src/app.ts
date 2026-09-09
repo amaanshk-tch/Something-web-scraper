@@ -2,10 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit, { type Options } from 'express-rate-limit';
-import path from 'path';
-import dotenv from 'dotenv';
-
-dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 import { env } from './config/env';
 import { log } from './lib/logger';
@@ -20,7 +16,7 @@ export function createApp() {
   const app = express();
   const apiRouter = express.Router();
 
-  let limiterConfig: Partial<Options> = {
+  const limiterConfig: Partial<Options> = {
     windowMs: 15 * 60 * 1000,
     max: 200,
     message: { error: 'Too many requests from this IP, please try again later.' },
@@ -30,7 +26,9 @@ export function createApp() {
 
   if (env.RATE_LIMIT_STORE === 'redis' && env.REDIS_URL) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const redis = require('redis');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const RedisStore = require('rate-limit-redis');
       const client = redis.createClient({ url: env.REDIS_URL });
       limiterConfig.store = new RedisStore({ client });

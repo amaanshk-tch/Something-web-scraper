@@ -23,6 +23,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  /* eslint-disable react-hooks/set-state-in-effect -- transient one-time notice derived from the URL, cleared on submit */
   useEffect(() => {
     if (searchParams.get('registered') === '1') {
       setNotice('Account created successfully! Please sign in with your email and password.');
@@ -30,6 +31,7 @@ function LoginForm() {
       setNotice('You have been logged out successfully.');
     }
   }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

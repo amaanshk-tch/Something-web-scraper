@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from bs4 import BeautifulSoup, Tag
 
-from utils import HEADERS, is_safe_url, sanitize_text
+from utils import HEADERS, coerce_iso_datetime, is_safe_url, sanitize_text
 
 
 class SearchResult(TypedDict):
@@ -73,61 +73,42 @@ class DuckDuckGoProvider(SearchProvider):
 
     def search(self, query: str, depth: int = 5) -> List[SearchResult]:
         results: List[SearchResult] = []
-        try:
-            safe_query = sanitize_text(query, max_length=200)
-            query_param = urllib.parse.quote_plus(safe_query)
-            url = f"https://html.duckduckgo.com/html/?q={query_param}"
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-                soup = BeautifulSoup(html, "html.parser")
-                cards = soup.find_all("div", class_="result")
-                for card in cards:
-                    if len(results) >= depth:
-                        break
-                    parsed = extract_result_from_card(card)
-                    if parsed:
-                        results.append({
-                            "url": parsed["url"],
-                            "title": parsed["title"],
-                            "snippet": parsed["snippet"],
-                        })
-        except Exception as error:
-            print(f"[DuckDuckGoProvider Warning] Live scrape encountered error: {error}")
-        return results[:depth]
-
-
-class BingProvider(SearchProvider):
-    """Bing HTML provider placeholder. Can be swapped in when the app has provider credentials."""
-
-    def search(self, query: str, depth: int = 5) -> List[SearchResult]:
-        results: List[SearchResult] = []
-        try:
-            safe_query = sanitize_text(query, max_length=200)
-            quoted = urllib.parse.quote_plus(safe_query)
-            url = f"https://www.bing.com/search?q={quoted}"
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-                soup = BeautifulSoup(html, "html.parser")
-                for card in soup.select("li.b_algo"):
-                    link = card.find("a")
-                    snippet = card.find("div", class_="b_caption") or card.find("p")
-                    if not link:
-                        continue
-                    url_value = link.get("href")
-                    if not is_safe_url(url_value):
-                        continue
+        safe_query = sanitize_text(query, max_length=200)
+        query_param = urllib.parse.quote_plus(safe_query)
+        url = f"https://html.duckduckgo.com/html/?q={query_param}"
+        req = urllib.request.Request(url, headers=HEADERS)
+        # Failures must propagate: a silent empty result here is indistinguishable
+        # from a genuine "no results" search, and would hide a broken search path.
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+            soup = BeautifulSoup(html, "html.parser")
+            cards = soup.find_all("div", class_="result")
+            for card in cards:
+                if len(results) >= depth:
+                    break
+                parsed = extract_result_from_card(card)
+                if parsed:
                     results.append({
-                        "url": url_value,
-                        "title": sanitize_text(link.get_text(" ", strip=True), max_length=300),
-                        "snippet": sanitize_text(snippet.get_text(" ", strip=True) if snippet else "", max_length=1500),
+                        "url": parsed["url"],
+                        "title": parsed["title"],
+                        "snippet": parsed["snippet"],
                     })
-                    if len(results) >= depth:
-                        break
-        except Exception as error:
-            print(f"[BingProvider Warning] Live scrape encountered error: {error}")
         return results[:depth]
+
+
+def _serper_result(item: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    url = item.get("link", "")
+    if not is_safe_url(url):
+        return None
+    result = {
+        "url": url,
+        "title": sanitize_text(item.get("title", ""), max_length=300),
+        "snippet": sanitize_text(item.get("snippet", ""), max_length=1500),
+    }
+    published_at = coerce_iso_datetime(item.get("date"))
+    if published_at:
+        result["publishedAt"] = published_at
+    return result
 
 
 class SerperProvider(SearchProvider):
@@ -153,15 +134,12 @@ class SerperProvider(SearchProvider):
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 organic = data.get("organic", [])[:depth]
-                return [
-                    {
-                        "url": item.get("link", ""),
-                        "title": sanitize_text(item.get("title", ""), max_length=300),
-                        "snippet": sanitize_text(item.get("snippet", ""), max_length=1500),
-                    }
-                    for item in organic
-                    if is_safe_url(item.get("link", ""))
-                ]
+                results = []
+                for item in organic:
+                    extracted = _serper_result(item)
+                    if extracted:
+                        results.append(extracted)
+                return results
         except Exception as error:
             print(f"[SerperProvider Warning] API search encountered error: {error}")
             return DuckDuckGoProvider().search(query, depth)
@@ -198,11 +176,18 @@ class TavilyProvider(SearchProvider):
                     url = item.get("url", "")
                     if not is_safe_url(url):
                         continue
-                    results.append({
+                    result = {
                         "url": url,
                         "title": sanitize_text(item.get("title", ""), max_length=300),
                         "snippet": sanitize_text(item.get("content", "") or item.get("snippet", ""), max_length=1500),
-                    })
+                    }
+                    published_at = coerce_iso_datetime(item.get("published_date"))
+                    if published_at:
+                        result["publishedAt"] = published_at
+                    score = item.get("score")
+                    if isinstance(score, (int, float)):
+                        result["relevanceScore"] = float(score)
+                    results.append(result)
                 return results
         except Exception as error:
             print(f"[TavilyProvider Warning] API search encountered error: {error}")
@@ -228,6 +213,15 @@ class MockSearchProvider(SearchProvider):
         ][:depth]
 
 
+# Providers that can be selected by name. 'mock' is excluded and must be
+# enabled explicitly via ALLOW_MOCK_PROVIDER for local demos and tests.
+ALLOWED_REQUEST_PROVIDERS = ("serper", "tavily", "duckduckgo")
+
+
+def mock_provider_allowed() -> bool:
+    return os.getenv("ALLOW_MOCK_PROVIDER", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _configured_provider_name(name: Optional[str] = None) -> str:
     """Resolve the configured provider from environment before falling back to a safe default."""
     requested = (name or os.getenv("SEARCH_PROVIDER") or "serper").lower()
@@ -239,16 +233,21 @@ def _configured_provider_name(name: Optional[str] = None) -> str:
 
 
 def get_provider(name: Optional[str] = None) -> SearchProvider:
-    """Factory returning a provider instance based on request or environment configuration."""
+    """
+    Factory returning a registered provider.
+    Unknown names raise instead of silently degrading, so callers can never
+    accidentally run an unvalidated or orphaned provider implementation.
+    """
     requested = _configured_provider_name(name)
+    if requested == "mock" and not mock_provider_allowed():
+        raise ValueError("Mock provider is disabled unless ALLOW_MOCK_PROVIDER is enabled")
     providers = {
-        "duckduckgo": DuckDuckGoProvider,
-        "bing": BingProvider,
         "serper": SerperProvider,
         "tavily": TavilyProvider,
+        "duckduckgo": DuckDuckGoProvider,
         "mock": MockSearchProvider,
     }
     provider_class = providers.get(requested)
-    if not provider_class:
-        return DuckDuckGoProvider()
+    if provider_class is None:
+        raise ValueError(f"Unsupported search provider: {requested}")
     return provider_class()

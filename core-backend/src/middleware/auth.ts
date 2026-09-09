@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../config/env';
 
@@ -9,13 +9,6 @@ export interface AuthenticatedRequest extends Request {
     email: string;
   };
   requestId?: string;
-}
-
-interface TokenPayload extends JwtPayload {
-  id: string;
-  email: string;
-  sub?: string;
-  type?: string;
 }
 
 const tokenPayloadSchema = z.object({

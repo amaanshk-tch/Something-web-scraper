@@ -3,9 +3,7 @@ import re
 import json
 import time
 import uuid
-from pathlib import Path
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -32,11 +30,19 @@ def get_limiter_key(request: Request) -> str:
         return f"request:{request_id}"
 
     return f"ip:{get_remote_address(request)}"
-from search_providers import get_provider
-from utils import sanitize_text
-
-if os.getenv("APP_ENV", "development") != "production":
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+from search_providers import (
+    ALLOWED_REQUEST_PROVIDERS,
+    get_provider,
+    mock_provider_allowed,
+)
+from utils import (
+    classify_source_type,
+    content_fingerprint,
+    count_words,
+    detect_non_latin_language,
+    extract_domain,
+    sanitize_text,
+)
 
 # ---------------------------------------------------------------------------
 # Rate limiting — local in-memory, keyed by an internal request header signal
@@ -104,15 +110,24 @@ class ScrapeRequest(BaseModel):
     topic: str = Field(..., description="Target search topic or domain")
     keywords: List[str] = Field(default_factory=list, description="Specific keyword filters to count in result titles and snippets")
     depth: int = Field(default=5, description="Number of results to extract and process")
-    provider: str = Field(default=os.getenv("SEARCH_PROVIDER", "serper"), description="Search provider to use: duckduckgo, bing, serper, tavily, or mock")
+    provider: str = Field(default=os.getenv("SEARCH_PROVIDER", "serper"), description="Search provider to use: serper, tavily, or duckduckgo")
 
 
 class ScrapedResultItem(BaseModel):
     sourceUrl: str
+    canonicalUrl: Optional[str] = None
     title: str
     snippet: str
     sentiment: str
     mentions: int
+    domain: Optional[str] = None
+    sourceType: Optional[str] = None
+    publishedAt: Optional[str] = None
+    contentHash: Optional[str] = None
+    wordCount: Optional[int] = None
+    language: Optional[str] = None
+    relevanceScore: Optional[float] = None
+    duplicateGroup: Optional[str] = None
 
 
 class ScrapeResponse(BaseModel):
@@ -136,15 +151,23 @@ def search_web_sources(topic: str, depth: int = 5, provider_name: str = os.geten
     """
     provider = get_provider(provider_name)
     raw_results = provider.search(topic, depth)
-    return [
-        {
-            "url": result.get("url", ""),
-            "title": result.get("title", ""),
+    sources = []
+    for result in raw_results:
+        url = result.get("url", "")
+        title = result.get("title", "")
+        if not url or not title:
+            continue
+        entry = {
+            "url": url,
+            "title": title,
             "snippet": result.get("snippet", ""),
         }
-        for result in raw_results
-        if result.get("url") and result.get("title")
-    ]
+        if result.get("publishedAt"):
+            entry["publishedAt"] = result["publishedAt"]
+        if isinstance(result.get("relevanceScore"), (int, float)):
+            entry["relevanceScore"] = result["relevanceScore"]
+        sources.append(entry)
+    return sources
 
 
 @app.get("/health")
@@ -176,7 +199,25 @@ def scrape_and_analyze(payload: ScrapeRequest, request: Request):
     depth = max(1, min(int(payload.depth), 15))
     provider_name = sanitize_text(payload.provider, max_length=50).lower() or os.getenv("SEARCH_PROVIDER", "serper")
 
-    sources = search_web_sources(topic, depth=depth, provider_name=provider_name)
+    # Internal services must not be able to select arbitrary provider names
+    # (bing, mock, or anything misspelled) — validate against the allowlist.
+    if provider_name not in ALLOWED_REQUEST_PROVIDERS and not (provider_name == "mock" and mock_provider_allowed()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported search provider: {provider_name}",
+        )
+
+    try:
+        sources = search_web_sources(topic, depth=depth, provider_name=provider_name)
+    except Exception as error:
+        # A search failure (e.g. every provider unavailable) is NOT the same as
+        # a successful search with zero results. Surface it as a 502 so callers
+        # can mark the job FAILED instead of reporting an empty COMPLETED run.
+        log_event("search.failed", provider=provider_name, error=str(error))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Search provider unavailable. Please retry later.",
+        )
     live_results_only = len(sources) < depth
 
     extracted_items = []
@@ -203,12 +244,26 @@ def scrape_and_analyze(payload: ScrapeRequest, request: Request):
         else:
             neutral_count += 1
 
+        domain = extract_domain(url)
+        source_type = classify_source_type(url)
+        word_count = count_words(f"{title} {snippet}")
+        language = detect_non_latin_language(f"{title} {snippet}")
+
         extracted_items.append(ScrapedResultItem(
             sourceUrl=url,
+            canonicalUrl=url,
             title=title,
             snippet=snippet,
             sentiment=sentiment,
-            mentions=mentions
+            mentions=mentions,
+            domain=domain or None,
+            sourceType=source_type,
+            publishedAt=item.get("publishedAt"),
+            contentHash=content_fingerprint(url, title, snippet),
+            wordCount=word_count,
+            language=language,
+            relevanceScore=item.get("relevanceScore"),
+            duplicateGroup=content_fingerprint(title, snippet),
         ))
 
     metrics = {

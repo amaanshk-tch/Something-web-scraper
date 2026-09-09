@@ -36,19 +36,20 @@ next-env.d.ts
 # Environment, Secrets & Credentials
 # ===================================================
 .env
-.env.example
 .env.*
 .env*.local
 .env.backup
 *.env
 **/.env
 **/.env.*
-*.env.example
-**/*.env.example
 *.pem
 *.key
 *.cert
 *.p12
+
+# The example template is tracked so fresh clones can bootstrap
+!.env.example
+!**/.env.example
 
 # ===================================================
 # Databases & Local Storage

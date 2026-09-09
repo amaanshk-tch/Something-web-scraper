@@ -20,7 +20,9 @@ export function useJobPolling(
 ) {
   const [jobData, setJobData] = useState<JobDetail | null>(null);
   const activeJobIdRef = useRef(activeJobId);
-  activeJobIdRef.current = activeJobId;
+  useEffect(() => {
+    activeJobIdRef.current = activeJobId;
+  });
   const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
@@ -31,9 +33,11 @@ export function useJobPolling(
   });
   const attemptCountsRef = useRef<Map<string, number>>(new Map());
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset the transient per-job cache when the active job changes */
   useEffect(() => {
     setJobData(null);
   }, [activeJobId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!DEMO_MODE) return;
@@ -118,7 +122,9 @@ export function useRecentJobs(
   const autoSelectedRef = useRef(false);
   const fetchMoreInflightRef = useRef(false);
   const activeJobIdRef = useRef(activeJobId);
-  activeJobIdRef.current = activeJobId;
+  useEffect(() => {
+    activeJobIdRef.current = activeJobId;
+  });
   const onAutoSelectRef = useRef(onAutoSelect);
   useEffect(() => {
     onAutoSelectRef.current = onAutoSelect;
@@ -133,6 +139,7 @@ export function useRecentJobs(
     enabled: !DEMO_MODE && !!user,
   });
 
+  /* eslint-disable react-hooks/set-state-in-effect -- recentJobs is seeded from the jobs query/demo data and is also mutated by fetchMoreJobs/refetchJobs, so it cannot be derived at render time */
   useEffect(() => {
     if (DEMO_MODE) return;
     if (!apiJobs) return;
@@ -156,6 +163,7 @@ export function useRecentJobs(
       onAutoSelectRef.current(jobs[0].id);
     }
   }, [user]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const fetchMoreJobs = async (cursor: string) => {
     if (DEMO_MODE) return;

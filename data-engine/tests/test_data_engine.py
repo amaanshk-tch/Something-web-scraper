@@ -3,6 +3,7 @@ import sys
 import unittest
 
 os.environ.setdefault("INTERNAL_SERVICE_KEY", "test-key")
+os.environ.setdefault("ALLOW_MOCK_PROVIDER", "1")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from bs4 import BeautifulSoup
@@ -10,11 +11,18 @@ from main import get_limiter_key
 from search_providers import (
     get_provider,
     MockSearchProvider,
-    DuckDuckGoProvider,
     decode_duckduckgo_href,
     extract_result_from_card,
 )
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
+from utils import (
+    classify_source_type,
+    coerce_iso_datetime,
+    content_fingerprint,
+    count_words,
+    detect_non_latin_language,
+    extract_domain,
+)
 
 
 class SentimentTests(unittest.TestCase):
@@ -48,9 +56,52 @@ class ProviderRegistrationTests(unittest.TestCase):
         provider = get_provider("mock")
         self.assertIsInstance(provider, MockSearchProvider)
 
-    def test_provider_factory_defaults_to_duckduckgo_when_unknown(self):
-        provider = get_provider("unknown-provider")
-        self.assertIsInstance(provider, DuckDuckGoProvider)
+    def test_provider_factory_rejects_unknown_provider(self):
+        with self.assertRaises(ValueError):
+            get_provider("unknown-provider")
+
+    def test_provider_factory_rejects_removed_bing_provider(self):
+        with self.assertRaises(ValueError):
+            get_provider("bing")
+
+    def test_provider_factory_rejects_mock_when_disallowed(self):
+        os.environ["ALLOW_MOCK_PROVIDER"] = "0"
+        try:
+            with self.assertRaises(ValueError):
+                get_provider("mock")
+        finally:
+            os.environ["ALLOW_MOCK_PROVIDER"] = "1"
+
+
+class MetadataDerivationTests(unittest.TestCase):
+    def test_extract_domain_parses_hostname(self):
+        self.assertEqual(extract_domain("https://www.Example.com/path?q=1"), "www.example.com")
+        self.assertEqual(extract_domain("not-a-url"), "")
+
+    def test_classify_source_type_heuristics(self):
+        self.assertEqual(classify_source_type("https://example.com/report.pdf"), "PDF")
+        self.assertEqual(classify_source_type("https://www.youtube.com/watch?v=x"), "VIDEO")
+        self.assertEqual(classify_source_type("https://substack.com/post"), "BLOG")
+        self.assertEqual(classify_source_type("https://www.reuters.com/markets"), "NEWS")
+        self.assertEqual(classify_source_type("https://example.com/article"), "WEB")
+
+    def test_content_fingerprint_is_stable_and_distinct(self):
+        self.assertEqual(content_fingerprint("a", "b"), content_fingerprint("a", "b"))
+        self.assertNotEqual(content_fingerprint("a", "b"), content_fingerprint("a", "c"))
+
+    def test_count_words_counts_tokens(self):
+        self.assertEqual(count_words("one two three"), 3)
+        self.assertEqual(count_words(""), 0)
+
+    def test_detect_non_latin_language_only_when_confident(self):
+        self.assertEqual(detect_non_latin_language("中国市场增长趋势分析"), "zh")
+        self.assertEqual(detect_non_latin_language("Growth in the global market"), None)
+
+    def test_coerce_iso_datetime_accepts_common_formats(self):
+        self.assertEqual(coerce_iso_datetime("2025-03-02T10:00:00Z"), "2025-03-02T10:00:00+00:00")
+        self.assertTrue(coerce_iso_datetime("2025-03-02 10:00:00") is not None)
+        self.assertIsNone(coerce_iso_datetime("Mar 2, 2025"))
+        self.assertIsNone(coerce_iso_datetime(None))
 
 
 class RateLimiterKeyTests(unittest.TestCase):

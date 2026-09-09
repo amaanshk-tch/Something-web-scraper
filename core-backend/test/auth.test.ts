@@ -126,7 +126,7 @@ describe('POST /api/v1/auth/login (origin-only CSRF)', () => {
 describe('POST /api/v1/auth/refresh (origin + CSRF)', () => {
   const CSRF = 'refresh-csrf-token';
 
-  it('issues a new access token using the database user, not the decoded claims', async () => {
+  it('issues a new access token, rotates the refresh token, and revokes the old session', async () => {
     const staleEmail = 'stale@example.com';
     const currentEmail = 'current@example.com';
     const refreshToken = signRefreshToken({ id: 'user-1', email: staleEmail });
@@ -138,6 +138,7 @@ describe('POST /api/v1/auth/refresh (origin + CSRF)', () => {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     mockedUserFindUnique.mockResolvedValue({ id: 'user-1', email: currentEmail });
+    mockedExecuteRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
 
     const res = await request(app)
       .post('/api/v1/auth/refresh')
@@ -150,6 +151,38 @@ describe('POST /api/v1/auth/refresh (origin + CSRF)', () => {
     expect(res.body.user.email).toBe(currentEmail);
     const cookies = res.headers['set-cookie'] as unknown as string[];
     expect(cookies.some((c) => c.startsWith('token='))).toBe(true);
+    expect(cookies.some((c) => c.startsWith('refresh_token='))).toBe(true);
+    const rotatedRefresh = cookies.find((c) => c.startsWith('refresh_token='));
+    expect(rotatedRefresh).toBeDefined();
+    expect(rotatedRefresh).not.toContain(refreshToken);
+    // The old session was revoked and a new one created (2 $executeRaw calls)
+    expect(mockedExecuteRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('detects refresh token reuse and revokes all of the user\'s sessions', async () => {
+    const refreshToken = signRefreshToken({ id: 'user-1', email: 'user@example.com' });
+    mockedSessionFindUnique.mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      refreshTokenHash: 'hash',
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    // The atomic revoke affects 0 rows: the token was already rotated.
+    mockedExecuteRaw.mockResolvedValueOnce(0);
+    mockedUserFindUnique.mockResolvedValue({ id: 'user-1', email: 'user@example.com' });
+
+    const res = await request(app)
+      .post('/api/v1/auth/refresh')
+      .set('Origin', ORIGIN)
+      .set('Cookie', [`refresh_token=${refreshToken}`, `csrf_token=${CSRF}`])
+      .set('x-csrf-token', CSRF);
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid refresh token');
+    // revoke-this-session (returned 0) + revoke-every-session = 2 $executeRaw calls
+    expect(mockedExecuteRaw).toHaveBeenCalledTimes(2);
+    expect(mockedUserFindUnique).not.toHaveBeenCalled();
   });
 
   it('rejects when the session has no matching user row', async () => {

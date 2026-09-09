@@ -130,6 +130,9 @@ async function processJob(jobId: string): Promise<void> {
     } else if (axios.isAxiosError(error) && error.response?.status === 500) {
       code = 'DATA_ENGINE_INTERNAL_ERROR';
       message = 'Research provider returned an internal error.';
+    } else if (axios.isAxiosError(error) && error.response?.status === 502) {
+      code = 'DATA_ENGINE_UNAVAILABLE';
+      message = 'Research provider searched but was unavailable; no results could be retrieved.';
     } else if (axios.isAxiosError(error) && error.response?.status === 429) {
       code = 'DATA_ENGINE_RATE_LIMITED';
       message = 'Research provider rate limit exceeded.';

@@ -16,16 +16,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({ user: null, loading: true, login: () => {}, logout: async () => {} });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(DEMO_MODE ? DEMO_USER : null);
+  const [loading, setLoading] = useState(DEMO_MODE ? false : true);
   const router = useRouter();
 
   useEffect(() => {
-    if (DEMO_MODE) {
-      setUser(DEMO_USER);
-      setLoading(false);
-      return;
-    }
+    if (DEMO_MODE) return;
 
     apiClient.get<User>('/auth/me').then((res) => setUser(res.data)).catch(() => setUser(null)).finally(() => setLoading(false));
   }, []);

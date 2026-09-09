@@ -4,11 +4,9 @@ import time
 import json
 import uuid
 import hmac
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 from io import BytesIO
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.util import get_remote_address
@@ -49,9 +47,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-if os.getenv("APP_ENV", "development") != "production":
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def log_event(event: str, **fields: object) -> None:

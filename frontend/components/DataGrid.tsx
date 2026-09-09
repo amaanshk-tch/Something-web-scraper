@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Ban,
   Bookmark,
@@ -19,14 +19,9 @@ export const DataGrid = ({ results }: { results: ResultItem[] }) => {
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
 
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [results.length, page, totalPages]);
-
-  const displayed = results.slice((page - 1) * pageSize, page * pageSize);
+  const displayed = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   if (!results.length) {
     return <div className="panel p-10 text-center text-sm text-[#74766f]">No sources found for this analysis.</div>;
@@ -121,13 +116,13 @@ export const DataGrid = ({ results }: { results: ResultItem[] }) => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-[#d9d5cb] px-5 py-3 text-xs text-[#74766f]">
-          <span>{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, results.length)} of {results.length}</span>
+          <span>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, results.length)} of {results.length}</span>
           <div className="flex items-center gap-2">
-            <button className="quiet-button !p-1.5 disabled:opacity-30" aria-label="Previous page" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+            <button className="quiet-button !p-1.5 disabled:opacity-30" aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span>{page} / {totalPages}</span>
-            <button className="quiet-button !p-1.5 disabled:opacity-30" aria-label="Next page" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
+            <span>{currentPage} / {totalPages}</span>
+            <button className="quiet-button !p-1.5 disabled:opacity-30" aria-label="Next page" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>

@@ -3,7 +3,6 @@ import axios from 'axios';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import type { SearchPayload } from '@analytics/contracts';
-import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { log } from '../lib/logger';
