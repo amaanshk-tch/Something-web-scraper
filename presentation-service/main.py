@@ -10,7 +10,7 @@ from io import BytesIO
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.util import get_remote_address
 
 
@@ -172,7 +172,15 @@ def generate_analytics_chart(data_summary: Dict[str, int], output_img_path: str)
 @app.get("/health")
 @limiter.limit("60/minute")
 def health_check(request: Request):
-    return {"status": "ok", "service": "presentation-service", "version": "1.0.0"}
+    try:
+        Presentation()
+    except Exception as error:
+        log_event("health.check_failed", error=str(error))
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "degraded", "service": "presentation-service", "version": "1.0.0", "pptxEngine": "unavailable"},
+        )
+    return {"status": "ok", "service": "presentation-service", "version": "1.0.0", "pptxEngine": "ok"}
 
 
 @app.post("/generate-presentation", dependencies=[Depends(verify_internal_key)])

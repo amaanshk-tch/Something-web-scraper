@@ -1,0 +1,8 @@
+{
+  "name": "@analytics/contracts",
+  "version": "1.0.0",
+  "description": "Shared type contracts between core-backend and frontend",
+  "types": "api.ts",
+  "main": "api.ts",
+  "private": true
+}

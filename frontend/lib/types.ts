@@ -10,4 +10,4 @@ export type {
   SentimentData,
   User,
   JobCreateResponse,
-} from '@contracts/api';
+} from '@analytics/contracts';

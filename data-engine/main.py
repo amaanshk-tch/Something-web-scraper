@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import hmac
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -149,7 +150,15 @@ def search_web_sources(topic: str, depth: int = 5, provider_name: str = os.geten
 @app.get("/health")
 @limiter.limit("60/minute")
 def health(request: Request):
-    return {"status": "ok", "service": "data-engine", "version": "1.0.0"}
+    try:
+        get_provider()
+    except Exception as error:
+        log_event("health.check_failed", error=str(error))
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "degraded", "service": "data-engine", "version": "1.0.0", "searchProvider": "unavailable"},
+        )
+    return {"status": "ok", "service": "data-engine", "version": "1.0.0", "searchProvider": "ok"}
 
 
 @app.post("/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_internal_key)])

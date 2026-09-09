@@ -13,6 +13,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@analytics/contracts": "*",
     "@prisma/client": "^5.11.0",
     "axios": "^1.6.8",
     "bcryptjs": "^2.4.3",

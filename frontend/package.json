@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@analytics/contracts": "*",
     "@tanstack/react-query": "^5.28.9",
     "axios": "^1.6.8",
     "clsx": "^2.1.0",

@@ -26,9 +26,6 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "@contracts/*": [
-        "../contracts/*"
       ]
     }
   },
@@ -37,7 +34,6 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "../contracts/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [

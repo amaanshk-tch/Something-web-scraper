@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "description": "Web analysis and report generation platform",
+  "workspaces": [
+    "contracts",
+    "core-backend",
+    "frontend"
+  ],
   "scripts": {
     "dev": "concurrently -k -p \"[{name}]\" -n \"DATA-ENGINE,PRES-SERVICE,CORE-BACKEND,FRONTEND\" -c \"yellow.bold,magenta.bold,blue.bold,cyan.bold\" \"cd data-engine && python main.py\" \"cd presentation-service && python main.py\" \"cd core-backend && npm run dev\" \"cd frontend && npm run dev\"",
     "build:backend": "cd core-backend && npm run build",

@@ -25,6 +25,7 @@ const CSRF = 'jobs-csrf-token';
 const mockedJobFindFirst = prisma.job.findFirst as unknown as jest.Mock;
 const mockedJobFindMany = prisma.job.findMany as unknown as jest.Mock;
 const mockedTransaction = prisma.$transaction as unknown as jest.Mock;
+const mockedQueryRaw = prisma.$queryRaw as unknown as jest.Mock;
 
 let txJobCreate: jest.Mock;
 let txConceptCreateMany: jest.Mock;
@@ -178,5 +179,28 @@ describe('GET /api/v1/jobs (no CSRF required for safe methods)', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.message).toBe('Job not found');
+  });
+});
+
+describe('GET /health', () => {
+  it('returns ok when the database is reachable', async () => {
+    mockedQueryRaw.mockResolvedValue([{ '1': 1 }]);
+
+    const res = await request(app).get('/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.db).toBe('ok');
+    expect(mockedQueryRaw).toHaveBeenCalled();
+  });
+
+  it('returns 503 when the database is unavailable', async () => {
+    mockedQueryRaw.mockRejectedValue(new Error('connection refused'));
+
+    const res = await request(app).get('/health');
+
+    expect(res.status).toBe(503);
+    expect(res.body.status).toBe('degraded');
+    expect(res.body.db).toBe('unavailable');
   });
 });

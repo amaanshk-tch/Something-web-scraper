@@ -68,6 +68,8 @@ model Job {
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  // Speeds up the stale-job reconciliation scan: WHERE status IN (...) AND updatedAt < cutoff
+  @@index([status, updatedAt])
   // Speeds up per-user job lookups by primary key (polling + presentation endpoints)
   @@index([id, userId])
 }

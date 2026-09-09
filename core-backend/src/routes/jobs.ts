@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import axios from 'axios';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import type { SearchPayload } from '../../../contracts/api';
+import type { SearchPayload } from '@analytics/contracts';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';

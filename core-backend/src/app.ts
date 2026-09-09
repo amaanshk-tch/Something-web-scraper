@@ -9,6 +9,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 import { env } from './config/env';
 import { log } from './lib/logger';
+import { prisma } from './lib/prisma';
 import { requestContext } from './middleware/requestContext';
 import { enforceOriginOnly, enforceOriginAndCsrf } from './middleware/csrf';
 import { errorHandler } from './middleware/errorHandler';
@@ -67,8 +68,14 @@ export function createApp() {
   app.use('/api/v1', apiRouter);
   app.use(errorHandler);
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'core-backend', version: 'v1' });
+  app.get('/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: 'ok', service: 'core-backend', version: 'v1', db: 'ok' });
+    } catch (error) {
+      log('error', 'health.db_check_failed', { error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(503).json({ status: 'degraded', service: 'core-backend', version: 'v1', db: 'unavailable' });
+    }
   });
 
   return app;
