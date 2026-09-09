@@ -1,0 +1,135 @@
+// ==============================================================================
+// ROADMAP REFERENCE SCHEMA: Multi-Tenant Workspace & Project Models
+// ==============================================================================
+// These models represent planned multi-tenant workspace, research project, and
+// report versioning features. They were removed from the active `schema.prisma`
+// because no routes or application code currently utilize them.
+//
+// Storing them here keeps production migrations lean and prevents Prisma client
+// bloat while preserving the design for future implementation.
+// ==============================================================================
+
+model Workspace {
+  id               String            @id @default(uuid())
+  name             String
+  ownerId          String
+  owner            User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  memberships      Membership[]
+  researchProjects ResearchProject[]
+
+  @@index([ownerId])
+}
+
+model Membership {
+  id          String         @id @default(uuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        MembershipRole @default(MEMBER)
+  createdAt   DateTime       @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model ResearchProject {
+  id           String        @id @default(uuid())
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  researchRuns ResearchRun[]
+  insights     Insight[]
+  reports      Report[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model ResearchRun {
+  id            String          @id @default(uuid())
+  projectId     String
+  project       ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runName       String?
+  status        JobStatus       @default(QUEUED)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  sources       Source[]
+  searchQueries SearchQuery[]   @relation("ResearchRunQueries")
+
+  @@index([projectId, createdAt])
+}
+
+model SearchQuery {
+  id            String       @id @default(uuid())
+  researchRunId String?
+  researchRun   ResearchRun? @relation("ResearchRunQueries", fields: [researchRunId], references: [id], onDelete: SetNull)
+  queryText     String
+  keywords      String[]
+  filters       Json?
+  createdAt     DateTime     @default(now())
+
+  @@index([researchRunId])
+}
+
+model Insight {
+  id        String          @id @default(uuid())
+  projectId String
+  project   ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  claimId   String?
+  claim     Claim?          @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  title     String
+  summary   String
+  kind      String?
+  score     Float?
+  createdAt DateTime        @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Report {
+  id          String          @id @default(uuid())
+  projectId   String
+  project     ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  createdAt   DateTime        @default(now())
+  versions    ReportVersion[]
+  exports     Export[]        @relation("ReportExports")
+
+  @@index([projectId, createdAt])
+}
+
+model ReportVersion {
+  id        String   @id @default(uuid())
+  reportId  String
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  version   Int      @default(1)
+  body      Json?
+  createdAt DateTime @default(now())
+
+  @@index([reportId, version])
+}
+
+model Export {
+  id        String   @id @default(uuid())
+  reportId  String?
+  report    Report?  @relation("ReportExports", fields: [reportId], references: [id], onDelete: SetNull)
+  format    String   @default("pptx")
+  status    String   @default("QUEUED")
+  url       String?
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([status, createdAt])
+}

@@ -130,9 +130,6 @@ const JOB_STAGE_MESSAGES: Record<string, string> = {
   QUEUED: 'Job accepted and waiting in queue.',
   PLANNING: 'Planning research path.',
   SEARCHING: 'Searching sources.',
-  FETCHING: 'Fetching full article context.',
-  ANALYZING: 'Analyzing claims and evidence.',
-  SYNTHESIZING: 'Synthesizing findings.',
   GENERATING_REPORT: 'Generating final report.',
   COMPLETED: 'Analysis complete.',
   FAILED: 'Analysis failed.',
@@ -143,9 +140,6 @@ const JOB_STAGE_PROGRESS: Record<string, number> = {
   QUEUED: 5,
   PLANNING: 18,
   SEARCHING: 35,
-  FETCHING: 58,
-  ANALYZING: 74,
-  SYNTHESIZING: 88,
   GENERATING_REPORT: 96,
   COMPLETED: 100,
   FAILED: 100,
@@ -190,7 +184,6 @@ function buildContentDisposition(filename: string): string {
 
 const JOB_STREAM_POLL_MS = 2500;
 const JOB_STREAM_HEARTBEAT_MS = 15000;
-const JOB_STREAM_MAX_LIFE_MS = 60_000;
 const TERMINAL_JOB_STATUSES = new Set(['COMPLETED', 'FAILED', 'CANCELLED']);
 
 interface JobStreamWatcher {
@@ -384,18 +377,9 @@ router.get('/:id/stream', authenticateToken, getJobLimiter, async (req: Authenti
       }
     }, JOB_STREAM_HEARTBEAT_MS);
 
-    const lifetime = setTimeout(() => {
-      try {
-        res.end();
-      } catch {
-        // Response already closed by the client.
-      }
-    }, JOB_STREAM_MAX_LIFE_MS);
-
     const cleanup = () => {
       try {
         clearInterval(heartbeat);
-        clearTimeout(lifetime);
         if (watcher.subscribers.has(res)) {
           watcher.subscribers.delete(res);
         }
@@ -461,7 +445,11 @@ router.get('/:id/presentation', authenticateToken, presentationLimiter, async (r
       metrics: Object.keys(metrics).length > 0 ? metrics : { Positive: 0, Negative: 0, Neutral: 0 },
       sources,
     }, {
-      headers: { 'X-Internal-Key': env.INTERNAL_SERVICE_KEY, 'X-Request-Id': requestId },
+      headers: {
+        'X-Internal-Key': env.INTERNAL_SERVICE_KEY,
+        'X-Request-Id': requestId,
+        'X-User-Id': req.user!.id,
+      },
       responseType: 'arraybuffer',
       timeout: 25_000,
     });

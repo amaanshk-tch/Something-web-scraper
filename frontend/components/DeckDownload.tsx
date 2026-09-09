@@ -43,7 +43,7 @@ export const DeckDownload = ({ jobId, topic }: { jobId: string; topic: string })
         URL.revokeObjectURL(url);
 
         setDownloaded(true);
-        toast.success('Report ready', 'Sample presentation report downloaded successfully.');
+        toast.success('Demo report ready', 'Sample JSON report downloaded successfully.');
         return;
       }
 
@@ -85,7 +85,7 @@ export const DeckDownload = ({ jobId, topic }: { jobId: string; topic: string })
             <p className="font-serif text-lg">Report ready</p>
             <p className="mt-0.5 text-xs text-[#74766f]">
               {DEMO_MODE
-                ? 'Demo export is a review placeholder.'
+                ? 'Demo export is a sample JSON report placeholder.'
                 : 'Generate and export the PowerPoint presentation.'}
             </p>
           </div>

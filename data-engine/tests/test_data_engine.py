@@ -6,7 +6,7 @@ os.environ.setdefault("INTERNAL_SERVICE_KEY", "test-key")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from bs4 import BeautifulSoup
-from main import decode_duckduckgo_href, extract_result_from_card
+from main import decode_duckduckgo_href, extract_result_from_card, get_limiter_key
 from search_providers import get_provider, MockSearchProvider, DuckDuckGoProvider
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
 
@@ -45,6 +45,17 @@ class ProviderRegistrationTests(unittest.TestCase):
     def test_provider_factory_defaults_to_duckduckgo_when_unknown(self):
         provider = get_provider("unknown-provider")
         self.assertIsInstance(provider, DuckDuckGoProvider)
+
+
+class RateLimiterKeyTests(unittest.TestCase):
+    def test_get_limiter_key_prefers_user_id_header(self):
+        class DummyRequest:
+            headers = {
+                'X-User-Id': 'user-42',
+                'X-Request-Id': 'request-789',
+            }
+
+        self.assertEqual(get_limiter_key(DummyRequest()), 'user:user-42')
 
 
 class SearchParsingTests(unittest.TestCase):

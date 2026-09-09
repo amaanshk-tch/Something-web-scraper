@@ -261,9 +261,19 @@ class MockSearchProvider(SearchProvider):
         ][:depth]
 
 
-def get_provider(name: str = "duckduckgo") -> SearchProvider:
-    """Factory returning a provider instance based on string name. This centralizes the provider choice."""
-    name = (name or "duckduckgo").lower()
+def _configured_provider_name(name: Optional[str] = None) -> str:
+    """Resolve the configured provider from environment before falling back to a safe default."""
+    requested = (name or os.getenv("SEARCH_PROVIDER") or "serper").lower()
+    if requested == "serper" and not os.getenv("SERPER_API_KEY"):
+        return "tavily" if os.getenv("TAVILY_API_KEY") else "duckduckgo"
+    if requested == "tavily" and not os.getenv("TAVILY_API_KEY"):
+        return "serper" if os.getenv("SERPER_API_KEY") else "duckduckgo"
+    return requested
+
+
+def get_provider(name: Optional[str] = None) -> SearchProvider:
+    """Factory returning a provider instance based on request or environment configuration."""
+    requested = _configured_provider_name(name)
     providers = {
         "duckduckgo": DuckDuckGoProvider,
         "bing": BingProvider,
@@ -271,7 +281,7 @@ def get_provider(name: str = "duckduckgo") -> SearchProvider:
         "tavily": TavilyProvider,
         "mock": MockSearchProvider,
     }
-    provider_class = providers.get(name)
+    provider_class = providers.get(requested)
     if not provider_class:
         return DuckDuckGoProvider()
     return provider_class()

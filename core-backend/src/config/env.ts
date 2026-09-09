@@ -62,6 +62,7 @@ export const env = {
   // Downstream services
   DATA_ENGINE_URL: optionalEnv('DATA_ENGINE_URL', 'http://127.0.0.1:8001'),
   PRESENTATION_SERVICE_URL: optionalEnv('PRESENTATION_SERVICE_URL', 'http://127.0.0.1:8002'),
+  SEARCH_PROVIDER: optionalEnv('SEARCH_PROVIDER', 'serper'),
 
   // Rate-limit storage strategy.
   RATE_LIMIT_STORE: optionalEnv('RATE_LIMIT_STORE', 'memory'),

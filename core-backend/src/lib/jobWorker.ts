@@ -3,11 +3,9 @@ import { env } from '../config/env';
 import { log } from './logger';
 import { prisma } from './prisma';
 
-// Queue-backed orchestration should be moved behind a durable queue such as
-// Redis/BullMQ or another shared job broker so that each API process does not
-// own a local in-memory semaphore. This repository currently uses a DB polling
-// queue with a process-local MAX_CONCURRENT gate.
-const MAX_CONCURRENT = 3;
+// Queue-backed orchestration remains a database polling worker.
+// The SQL claim uses FOR UPDATE SKIP LOCKED as the authoritative job-source
+// and must not be shadowed by any process-local in-memory semaphore.
 const POLL_INTERVAL_MS = 3_000;
 
 interface DataEngineResult {
@@ -38,8 +36,6 @@ interface DataEngineResponse {
   liveResultsOnly?: boolean;
 }
 
-let activeJobs = 0;
-
 async function claimNextJob(): Promise<string | null> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     UPDATE "Job"
@@ -69,9 +65,13 @@ async function processJob(jobId: string): Promise<void> {
 
     const engineRes = await axios.post<DataEngineResponse>(
       `${env.DATA_ENGINE_URL}/scrape`,
-      { topic: job.topic, keywords: job.keywords, depth: job.depth },
+      { topic: job.topic, keywords: job.keywords, depth: job.depth, provider: env.SEARCH_PROVIDER },
       {
-        headers: { 'X-Internal-Key': env.INTERNAL_SERVICE_KEY, 'X-Request-Id': job.requestId ?? jobId },
+        headers: {
+          'X-Internal-Key': env.INTERNAL_SERVICE_KEY,
+          'X-Request-Id': job.requestId ?? jobId,
+          'X-User-Id': job.userId,
+        },
         timeout: 60_000,
       }
     );
@@ -85,21 +85,6 @@ async function processJob(jobId: string): Promise<void> {
         resultsFound: results?.length ?? 0,
       },
     };
-
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: 'FETCHING' },
-    });
-
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: 'ANALYZING' },
-    });
-
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: 'SYNTHESIZING' },
-    });
 
     await prisma.$transaction(async (tx) => {
       await tx.job.update({
@@ -145,6 +130,9 @@ async function processJob(jobId: string): Promise<void> {
     } else if (axios.isAxiosError(error) && error.response?.status === 500) {
       code = 'DATA_ENGINE_INTERNAL_ERROR';
       message = 'Research provider returned an internal error.';
+    } else if (axios.isAxiosError(error) && error.response?.status === 429) {
+      code = 'DATA_ENGINE_RATE_LIMITED';
+      message = 'Research provider rate limit exceeded.';
     }
 
     log('error', 'job.failed', {
@@ -152,32 +140,34 @@ async function processJob(jobId: string): Promise<void> {
       jobId,
       durationMs: Date.now() - startedAt,
       code,
-      provider: 'duckduckgo',
+      provider: env.SEARCH_PROVIDER,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
 
     await prisma.job.update({
       where: { id: jobId },
-      data: { status: 'FAILED', errorMessage: message, errorCode: code },
+      data: {
+        status: 'FAILED',
+        errorMessage: message,
+        errorCode: code,
+        updatedAt: new Date(),
+      },
     });
   }
 }
 
 async function pollAndProcess(): Promise<void> {
-  if (activeJobs >= MAX_CONCURRENT) return;
-
   try {
     const jobId = await claimNextJob();
     if (!jobId) return;
 
-    activeJobs += 1;
-    void processJob(jobId).finally(() => { activeJobs -= 1; });
+    await processJob(jobId);
   } catch (error) {
     log('error', 'job.poll_failed', { error: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
 
 export function startJobWorker(): NodeJS.Timeout {
-  log('info', 'job_worker.started', { pollIntervalMs: POLL_INTERVAL_MS, maxConcurrent: MAX_CONCURRENT });
+  log('info', 'job_worker.started', { pollIntervalMs: POLL_INTERVAL_MS });
   return setInterval(() => void pollAndProcess(), POLL_INTERVAL_MS);
 }

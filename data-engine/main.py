@@ -16,6 +16,24 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from sentiment import analyze_sentiment_and_metrics, clean_snippet
+
+
+def get_limiter_key(request: Request) -> str:
+    """
+    Prefer a caller header that scopes the limit to the authenticated user,
+    and fall back to the request ID if the backend is the only source of truth
+    for this internal request. Remote IP is used last to avoid the one-bucket
+    problem observed when internal services sit behind a single local proxy.
+    """
+    user_id = request.headers.get("X-User-Id")
+    if user_id:
+        return f"user:{user_id}"
+
+    request_id = request.headers.get("X-Request-Id")
+    if request_id:
+        return f"request:{request_id}"
+
+    return f"ip:{get_remote_address(request)}"
 from search_providers import (
     get_provider,
     decode_duckduckgo_href,
@@ -26,13 +44,11 @@ if os.getenv("APP_ENV", "development") != "production":
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ---------------------------------------------------------------------------
-# Rate limiting — local in-memory, keyed by remote IP.
-# Production should be moved to Redis or another shared backing store so
-# every API instance shares the same limit counters.
-# Acts as a defence-in-depth layer even though /scrape is already protected
-# by the X-Internal-Key guard.
+# Rate limiting — local in-memory, keyed by an internal request header signal
+# when available. This prevents every caller from collapsing into the same
+# shared 127.0.0.1 bucket while still preserving a safe IP fallback.
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+limiter = Limiter(key_func=get_limiter_key, default_limits=["60/minute"])
 
 app = FastAPI(title="Web Analytics - Data Extraction Engine", version="1.0.0")
 app.state.limiter = limiter
@@ -124,7 +140,7 @@ class ScrapeRequest(BaseModel):
     topic: str = Field(..., description="Target search topic or domain")
     keywords: List[str] = Field(default_factory=list, description="Specific keyword filters to count in result titles and snippets")
     depth: int = Field(default=5, description="Number of results to extract and process")
-    provider: str = Field(default="duckduckgo", description="Search provider to use: duckduckgo, bing, serper, tavily, or mock")
+    provider: str = Field(default=os.getenv("SEARCH_PROVIDER", "serper"), description="Search provider to use: duckduckgo, bing, serper, tavily, or mock")
 
 
 class ScrapedResultItem(BaseModel):
@@ -155,13 +171,13 @@ HEADERS = {
 
 
 # Provider abstraction is defined in search_providers.py.
-# The application now consults a provider factory instead of hardwiring DuckDuckGo HTML scraping.
+# The application now consults a provider factory and reads the default provider from the environment.
 
 
-def search_web_sources(topic: str, depth: int = 5, provider_name: str = "duckduckgo") -> List[Dict[str, str]]:
+def search_web_sources(topic: str, depth: int = 5, provider_name: str = os.getenv("SEARCH_PROVIDER", "serper")) -> List[Dict[str, str]]:
     """
     Fetches real search result records through a SearchProvider implementation.
-    The default is DuckDuckGo; other providers can be plugged in via the provider registry.
+    The default is environment-configurable and can be selected as serper/tavily/duckduckgo.
     """
     provider = get_provider(provider_name)
     raw_results = provider.search(topic, depth)
@@ -195,7 +211,7 @@ def scrape_and_analyze(payload: ScrapeRequest, request: Request):
 
     keywords = sanitize_keywords(payload.keywords, max_count=20, max_kw_len=50)
     depth = max(1, min(int(payload.depth), 15))
-    provider_name = sanitize_text(payload.provider, max_length=50).lower() or "duckduckgo"
+    provider_name = sanitize_text(payload.provider, max_length=50).lower() or os.getenv("SEARCH_PROVIDER", "serper")
 
     sources = search_web_sources(topic, depth=depth, provider_name=provider_name)
     live_results_only = len(sources) < depth

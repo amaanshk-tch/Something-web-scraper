@@ -1,22 +1,19 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import { useToast } from '@/lib/toastContext';
 import { apiClient, getApiErrorMessage } from '@/lib/api';
+import { useJobPolling, useRecentJobs } from '@/lib/hooks';
 import { SearchForm } from '@/components/SearchForm';
 import { JobStatusBar } from '@/components/JobStatusBar';
 import { DataGrid } from '@/components/DataGrid';
 import { DeckDownload } from '@/components/DeckDownload';
 import { BarChart3, CheckCircle, AlertCircle, X, RotateCcw } from 'lucide-react';
 import { DEMO_MODE } from '@/lib/demoMode';
-import { createDemoJob, getDemoJob, listDemoJobs } from '@/lib/demoApi';
-import type { JobCreateResponse, JobDetail, JobsPageResponse, JobSummary, SearchPayload } from '@/lib/types';
-
-const BASE_POLL_INTERVAL_MS = 2500;
-const SLOW_POLL_INTERVAL_MS = 5000;
-const SLOW_POLL_AFTER_ATTEMPTS = 4;
+import { createDemoJob } from '@/lib/demoApi';
+import type { JobCreateResponse, SearchPayload } from '@/lib/types';
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -24,11 +21,8 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [jobData, setJobData] = useState<JobDetail | null>(null);
   const [searching, setSearching] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [recentJobs, setRecentJobs] = useState<JobSummary[]>([]);
-  const [nextJobsCursor, setNextJobsCursor] = useState<string | null>(null);
 
   // Track previous status to notify only on state transitions
   const previousStatusRef = useRef<string | null>(null);
@@ -39,120 +33,30 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, router]);
 
-  const fetchRecentJobs = async (cursor?: string | null) => {
-    if (DEMO_MODE) {
-      const jobs = listDemoJobs();
-      setRecentJobs(cursor ? (prev) => [...prev, ...jobs] : jobs);
-      setNextJobsCursor(null);
-      if (jobs.length > 0 && !activeJobId && !cursor) setActiveJobId(jobs[0].id);
-      return;
-    }
-    try {
-      const params = cursor ? { cursor, limit: 12 } : { limit: 12 };
-      const res = await apiClient.get<JobsPageResponse>('/jobs', { params });
-      setRecentJobs((prev) => (cursor ? [...prev, ...res.data.jobs] : res.data.jobs));
-      setNextJobsCursor(res.data.nextCursor);
-      if (res.data.jobs.length > 0 && !activeJobId && !cursor) {
-        setActiveJobId(res.data.jobs[0].id);
+  const { recentJobs, nextJobsCursor, fetchMoreJobs, refetchJobs } = useRecentJobs(user, activeJobId, (jobId) => {
+    setActiveJobId(jobId);
+  });
+
+  const jobData = useJobPolling(activeJobId, refetchJobs, (status, jobDetail) => {
+    if (previousStatusRef.current !== status) {
+      if (status === 'COMPLETED') {
+        toast.success(
+          'Analysis complete',
+          `Discovered ${jobDetail?.results?.length ?? 0} sources with keyword signals.`
+        );
+      } else if (status === 'FAILED') {
+        toast.error(
+          'Analysis failed',
+          jobDetail?.errorMessage || 'Data extraction encountered an error. Please retry.'
+        );
       }
-    } catch (error) {
-      console.error('Error fetching jobs:', error);
-      toast.error('History unavailable', 'Could not retrieve previous analyses.');
+      previousStatusRef.current = status;
     }
-  };
 
-  useEffect(() => {
-    if (user) {
-      void fetchRecentJobs();
+    if (status === 'COMPLETED' || status === 'FAILED') {
+      setSearching(false);
     }
-  }, [user]);
-
-  useEffect(() => {
-    if (!activeJobId) return;
-
-    let cancelled = false;
-    let attemptCount = 0;
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-    const pollJob = async () => {
-      try {
-        if (DEMO_MODE) {
-          const demoJob = getDemoJob(activeJobId);
-          if (!demoJob) return;
-
-          // Check if transitioning to completed or failed
-          if (previousStatusRef.current !== demoJob.status) {
-            if (demoJob.status === 'COMPLETED') {
-              toast.success(
-                'Analysis complete',
-                `Found ${demoJob.results.length} sources and compiled key takeaways.`
-              );
-            } else if (demoJob.status === 'FAILED') {
-              toast.error('Analysis failed', demoJob.errorMessage || 'Data extraction encountered an error.');
-            }
-            previousStatusRef.current = demoJob.status;
-          }
-
-          setJobData({ ...demoJob });
-          if (demoJob.status === 'COMPLETED' || demoJob.status === 'FAILED') {
-            setSearching(false);
-            void fetchRecentJobs();
-            return;
-          }
-          timeoutHandle = setTimeout(() => void pollJob(), BASE_POLL_INTERVAL_MS);
-          return;
-        }
-
-        const res = await apiClient.get<JobDetail>(`/jobs/${activeJobId}`);
-        if (cancelled) return;
-
-        // Check if transitioning to completed or failed
-        if (previousStatusRef.current !== res.data.status) {
-          if (res.data.status === 'COMPLETED') {
-            toast.success(
-              'Analysis complete',
-              `Discovered ${res.data.results?.length ?? 0} sources with lexical signals.`
-            );
-          } else if (res.data.status === 'FAILED') {
-            toast.error(
-              'Analysis failed',
-              res.data.errorMessage || 'Data extraction encountered an error. Please retry.'
-            );
-          }
-          previousStatusRef.current = res.data.status;
-        }
-
-        setJobData(res.data);
-
-        if (res.data.status === 'COMPLETED' || res.data.status === 'FAILED') {
-          setSearching(false);
-          void fetchRecentJobs();
-          return;
-        }
-
-        attemptCount += 1;
-        const nextDelay = attemptCount >= SLOW_POLL_AFTER_ATTEMPTS ? SLOW_POLL_INTERVAL_MS : BASE_POLL_INTERVAL_MS;
-        timeoutHandle = setTimeout(() => {
-          void pollJob();
-        }, nextDelay);
-      } catch (error) {
-        if (cancelled) return;
-        console.error('Polling error:', error);
-        timeoutHandle = setTimeout(() => {
-          void pollJob();
-        }, SLOW_POLL_INTERVAL_MS);
-      }
-    };
-
-    void pollJob();
-
-    return () => {
-      cancelled = true;
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-    };
-  }, [activeJobId]);
+  });
 
   const handleStartSearch = async (payload: SearchPayload) => {
     setSearching(true);
@@ -184,9 +88,9 @@ export default function DashboardPage() {
       )
     : [];
 
-  const confidence = jobData
-    ? Math.min(99, Math.max(1, Math.round((jobData.results.length / Math.max(jobData.depth, 1)) * 100)))
-    : 0;
+  const sourceCoverage = jobData
+    ? `${jobData.results.length} of ${jobData.depth} requested`
+    : '0 of 0 requested';
 
   if (authLoading || !user) {
     return <div className="flex min-h-[60vh] items-center justify-center text-sm text-[#74766f]">Loading workspace…</div>;
@@ -293,26 +197,14 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid gap-2 border-b border-[#d9d5cb] px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 border-b border-[#d9d5cb] px-5 py-4 sm:grid-cols-2">
               <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
                 <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Sources</div>
                 <div className="mt-2 font-serif text-3xl text-[#20221d]">{jobData.results.length}</div>
               </div>
               <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Claims</div>
-                <div className="mt-2 font-serif text-3xl text-[#20221d]">
-                  {jobData.results.reduce((total, item) => total + (item.claims?.length ?? 0), 0)}
-                </div>
-              </div>
-              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Themes</div>
-                <div className="mt-2 font-serif text-3xl text-[#20221d]">{lexicalSignalEntries.length}</div>
-              </div>
-              <div className="rounded-lg border border-[#e1ddd4] bg-white px-4 py-4">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Confidence</div>
-                <div className="mt-2 font-serif text-3xl text-[#20221d]">
-                  {confidence}%
-                </div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-[#8b887f]">Sources found</div>
+                <div className="mt-2 font-serif text-2xl leading-tight text-[#20221d]">{sourceCoverage}</div>
               </div>
             </div>
 
@@ -339,7 +231,7 @@ export default function DashboardPage() {
               <section className="rounded-lg border border-[#e1ddd4] bg-white p-5">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-[#707154]" />
-                  <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b887f]">Signal map</span>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b887f]">Keyword signal map</span>
                 </div>
                 <div className="mt-4 space-y-3">
                   {lexicalSignalEntries.length ? (
@@ -350,7 +242,7 @@ export default function DashboardPage() {
                       </div>
                     ))
                   ) : (
-                    <span className="text-sm text-[#74766f]">Signal map unavailable.</span>
+                    <span className="text-sm text-[#74766f]">Keyword signal map unavailable.</span>
                   )}
                 </div>
               </section>
@@ -393,7 +285,7 @@ export default function DashboardPage() {
             </div>
             {nextJobsCursor && (
               <button
-                onClick={() => void fetchRecentJobs(nextJobsCursor)}
+                onClick={() => void fetchMoreJobs(nextJobsCursor)}
                 className="text-xs font-semibold underline underline-offset-4"
               >
                 Load older

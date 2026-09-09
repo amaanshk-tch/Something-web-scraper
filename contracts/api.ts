@@ -38,7 +38,6 @@ export interface ResultItem {
   published?: string;
   relevance?: number;
   evidence?: string;
-  claims?: string[];
   createdAt?: string;
 }
 

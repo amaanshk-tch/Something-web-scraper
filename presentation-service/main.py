@@ -6,10 +6,28 @@ import uuid
 import hmac
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from io import BytesIO
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks, Request, status
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, status
+from fastapi.responses import StreamingResponse
+from slowapi.util import get_remote_address
+
+
+def get_limiter_key(request: Request) -> str:
+    """
+    Keep internal service throttles user-scoped when the Node backend passes
+    X-User-Id and X-Request-Id. Fall back to the request ID, then IP.
+    """
+    user_id = request.headers.get("X-User-Id")
+    if user_id:
+        return f"user:{user_id}"
+
+    request_id = request.headers.get("X-Request-Id")
+    if request_id:
+        return f"request:{request_id}"
+
+    return f"ip:{get_remote_address(request)}"
 
 def sanitize_text(text: str, max_len: int = 500) -> str:
     """
@@ -26,7 +44,6 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import matplotlib
 
@@ -48,11 +65,11 @@ if not INTERNAL_SERVICE_KEY:
 app = FastAPI(title="Web Analytics - Presentation Engine", version="1.0.0")
 
 # ---------------------------------------------------------------------------
-# Rate limiting — in-memory, keyed by remote IP.
+# Rate limiting — in-memory, keyed by a request header signal where available.
 # Defence-in-depth layer alongside the X-Internal-Key guard.
 # PPTX generation is CPU/memory heavy so the endpoint limit is intentionally tight.
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+limiter = Limiter(key_func=get_limiter_key, default_limits=["30/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -78,14 +95,6 @@ def verify_internal_key(x_internal_key: str = Header(None, alias="X-Internal-Key
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing internal service authorization key"
         )
-
-
-def cleanup_file(path: str):
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception as error:
-        print(f"[Cleanup Warning] Failed to delete {path}: {error}")
 
 
 def sweep_temp_dir():
@@ -168,7 +177,7 @@ def health_check(request: Request):
 
 @app.post("/generate-presentation", dependencies=[Depends(verify_internal_key)])
 @limiter.limit("10/minute")  # PPTX generation is CPU/memory heavy — tight cap
-def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: Request):
+def make_deck(payload: DeckRequest, request: Request):
     topic = sanitize_text(payload.topic, max_len=200) or "Market Research"
     bullet_points = [sanitize_text(b, max_len=300) for b in payload.bullets if sanitize_text(b)]
     chart_metrics = payload.metrics
@@ -177,7 +186,6 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
     run_id = str(uuid.uuid4())[:8]
     clean_topic = re.sub(r'[^a-zA-Z0-9_\-]', '', topic.replace(' ', '_'))[:50] or "Report"
     filename_base = f"Research_Report_{clean_topic}_{run_id}"
-    ppt_path = os.path.join(TEMP_DIR, f"{filename_base}.pptx")
     chart_path = os.path.join(TEMP_DIR, f"temp_chart_{run_id}.png")
 
     try:
@@ -290,7 +298,9 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
             paragraph = text_frame.paragraphs[0]
             paragraph.text = "No sources were returned for this analysis."
 
-        prs.save(ppt_path)
+        ppt_buffer = BytesIO()
+        prs.save(ppt_buffer)
+        ppt_bytes = ppt_buffer.getvalue()
 
         if os.path.exists(chart_path):
             try:
@@ -298,12 +308,13 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
             except Exception:
                 pass
 
-        background_tasks.add_task(cleanup_file, ppt_path)
-
-        return FileResponse(
-            ppt_path,
-            filename=f"{filename_base}.pptx",
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        return StreamingResponse(
+            iter([ppt_bytes]),
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename_base}.pptx"',
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            },
+            media_type='application/vnd.openxmlformats-officedocument.presentationml.presentation',
         )
 
     except Exception as error:
@@ -311,11 +322,6 @@ def make_deck(payload: DeckRequest, background_tasks: BackgroundTasks, request: 
         if os.path.exists(chart_path):
             try:
                 os.remove(chart_path)
-            except Exception:
-                pass
-        if os.path.exists(ppt_path):
-            try:
-                os.remove(ppt_path)
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail="Presentation generation failed")

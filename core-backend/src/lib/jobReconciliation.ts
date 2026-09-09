@@ -1,8 +1,8 @@
 import { prisma } from './prisma';
 import { log } from './logger';
 
-const STALE_JOB_THRESHOLD_MS = 3 * 60 * 1000;
-const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
+const STALE_JOB_THRESHOLD_MS = 90 * 1000;
+const RECONCILIATION_INTERVAL_MS = 60 * 1000;
 
 export async function reconcileStaleJobs(): Promise<number> {
   try {

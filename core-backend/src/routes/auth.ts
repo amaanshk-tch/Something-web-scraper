@@ -114,7 +114,7 @@ const csrfCookieOptions = {
   httpOnly: false,
   secure: env.isProduction,
   sameSite: 'lax' as const,
-  maxAge: 30 * 24 * 60 * 60 * 1000,
+  maxAge: 60 * 60 * 1000,
 };
 
 function signAccessToken(user: { id: string; email: string }) {
@@ -227,6 +227,63 @@ router.post('/login', loginLimiter, async (req, res) => {
   } catch (error) {
     log('error', 'auth.login_failed', { requestId: (req as AuthenticatedRequest).requestId, error: error instanceof Error ? error.message : 'Unknown error' });
     return res.status(400).json({ error: 'Login failed. Please check your credentials.' });
+  }
+});
+
+router.post('/refresh', loginLimiter, async (req, res) => {
+  try {
+    const refreshToken = req.cookies?.refresh_token as string | undefined;
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Refresh token required' });
+    }
+
+    const decoded = jwt.verify(refreshToken, env.JWT_SECRET, {
+      issuer: 'analytics-core-backend',
+      audience: 'analytics-app',
+    }) as jwt.JwtPayload & { id: string; email: string; type?: string } | null;
+
+    if (!decoded || typeof decoded !== 'object' || decoded.type !== 'refresh') {
+      return res.status(403).json({ error: 'Invalid refresh token' });
+    }
+
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+    const session = await prisma.session.findUnique({ where: { refreshTokenHash } });
+    if (!session) {
+      return res.status(401).json({ error: 'Session not found' });
+    }
+
+    if (session.revokedAt || session.expiresAt <= new Date()) {
+      return res.status(401).json({ error: 'Session expired' });
+    }
+
+    if (session.userId !== decoded.id) {
+      return res.status(403).json({ error: 'Session user mismatch' });
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, email: true },
+    });
+    if (!dbUser) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    const accessToken = signAccessToken({ id: dbUser.id, email: dbUser.email });
+    const csrfToken = createCsrfToken();
+
+    res.cookie('token', accessToken, accessCookieOptions);
+    res.cookie('csrf_token', csrfToken, csrfCookieOptions);
+
+    return res.json({
+      user: { id: dbUser.id, email: dbUser.email },
+      csrfToken,
+    });
+  } catch (error) {
+    log('warn', 'auth.refresh_failed', {
+      requestId: (req as AuthenticatedRequest).requestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return res.status(403).json({ error: 'Invalid or expired refresh token' });
   }
 });
 

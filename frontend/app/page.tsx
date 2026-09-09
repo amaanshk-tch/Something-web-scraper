@@ -16,7 +16,7 @@ export default function LandingPage() {
             Search snippets.<br />Signal review.
           </h1>
           <p className="mt-7 max-w-2xl text-base leading-7 text-[#74766f] sm:text-lg">
-            A focused workspace for collecting source snippets, reviewing keyword hits, and turning a lexical signal scan into a concise evidence brief.
+            A focused workspace for collecting source snippets, reviewing keyword hits, and converting a lexical keyword-signal scan into a concise evidence brief.
           </p>
           <div className="mt-9 flex flex-wrap gap-3">
             <Link href={user ? '/dashboard' : '/register'} className="primary-button inline-flex items-center gap-2 px-5 py-3">
@@ -34,7 +34,7 @@ export default function LandingPage() {
           <div className="space-y-4 p-6">
             {[
               ['01', 'Collect', 'Search result cards and source snippets.'],
-              ['02', 'Review', 'Inspect mentions, sentiment and recurring themes.'],
+              ['02', 'Review', 'Inspect mentions, keyword signal counts, and recurring themes.'],
               ['03', 'Report', 'Package the findings into a clean presentation.'],
             ].map(([n, title, copy]) => (
               <div key={n} className="grid grid-cols-[32px_1fr] gap-4 border-b border-[#e4e0d8] pb-4 last:border-0 last:pb-0">

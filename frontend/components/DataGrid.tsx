@@ -68,8 +68,7 @@ export const DataGrid = ({ results }: { results: ResultItem[] }) => {
               <th className="px-4 py-3">Published</th>
               <th className="px-4 py-3">Relevance</th>
               <th className="px-4 py-3">Evidence</th>
-              <th className="px-4 py-3">Sentiment</th>
-              <th className="px-4 py-3">Claims</th>
+              <th className="px-4 py-3">Keyword signal</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -92,9 +91,6 @@ export const DataGrid = ({ results }: { results: ResultItem[] }) => {
                   {item.evidence ?? item.snippet}
                 </td>
                 <td className="px-4 py-4">{badge(item.sentiment)}</td>
-                <td className="px-4 py-4">
-                  <span className="font-mono text-sm text-[#5f615a]">{item.claims?.length ?? item.mentions ?? 0}</span>
-                </td>
                 <td className="px-4 py-4">
                   <div className="flex items-center justify-end gap-2">
                     <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="quiet-button !p-1.5" title="Open source">
